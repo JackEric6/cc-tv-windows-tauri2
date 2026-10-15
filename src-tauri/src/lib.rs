@@ -202,6 +202,27 @@ fn resource_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), Box<dyn std::er
     Ok((resources.join("node.exe"), resources.join("backend.cjs")))
 }
 
+fn node_compatible_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+        let path: Vec<u16> = path.as_os_str().encode_wide().collect();
+        let verbatim_prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
+        if let Some(remainder) = path.strip_prefix(&verbatim_prefix) {
+            let unc_prefix: Vec<u16> = "UNC\\".encode_utf16().collect();
+            if let Some(unc_path) = remainder.strip_prefix(&unc_prefix) {
+                let mut compatible: Vec<u16> = r"\\".encode_utf16().collect();
+                compatible.extend_from_slice(unc_path);
+                return PathBuf::from(std::ffi::OsString::from_wide(&compatible));
+            }
+            return PathBuf::from(std::ffi::OsString::from_wide(remainder));
+        }
+    }
+
+    path.to_path_buf()
+}
+
 fn start_backend(app: &AppHandle) -> Result<BackendProcess, Box<dyn std::error::Error>> {
     let (node_path, backend_path) = resource_paths(app)?;
     if !node_path.is_file() || !backend_path.is_file() {
@@ -219,12 +240,12 @@ fn start_backend(app: &AppHandle) -> Result<BackendProcess, Box<dyn std::error::
     drop(listener);
     let token = uuid::Uuid::new_v4().simple().to_string();
     let mut child = Command::new(node_path)
-        .arg(backend_path)
+        .arg(node_compatible_path(&backend_path))
         .arg("--port")
         .arg(port.to_string())
         .arg("--token")
         .arg(&token)
-        .env("CCTV_DATA_DIR", &data_dir)
+        .env("CCTV_DATA_DIR", node_compatible_path(&data_dir))
         .env("CCTV_APP_VERSION", env!("CARGO_PKG_VERSION"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -259,10 +280,21 @@ fn start_backend(app: &AppHandle) -> Result<BackendProcess, Box<dyn std::error::
         }
     });
 
-    if ready_rx.recv_timeout(Duration::from_secs(90)).is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("Node sidecar did not become ready within 90 seconds".into());
+    match ready_rx.recv_timeout(Duration::from_secs(90)) {
+        Ok(()) => {}
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Node sidecar did not become ready within 90 seconds".into());
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let status = child.try_wait()?;
+            if status.is_none() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            return Err(format!("Node sidecar exited before becoming ready: {status:?}").into());
+        }
     }
 
     Ok(BackendProcess {

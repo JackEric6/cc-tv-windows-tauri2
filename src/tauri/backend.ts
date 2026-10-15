@@ -41,7 +41,7 @@ function register(channel: string, handler: Handler): void {
 
 function registerHandlers(): void {
   register(IPC.appInfo, () => ({
-    version: process.env['CCTV_APP_VERSION'] || '1.0.12',
+    version: process.env['CCTV_APP_VERSION'] || '1.0.13',
     webview2: 'Evergreen',
     node: process.versions.node,
     platform: `${process.platform} ${process.arch}`,
