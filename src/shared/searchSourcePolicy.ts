@@ -20,11 +20,11 @@ const SEARCH_RESULT_ORDER = new Map([
   ['ryzy', 7],
   ['360zy', 8]
 ])
-// 2026-10-14 实测只有这 30 个源能对「庆余年」返回结果；此策略只控制搜索，不控制整源启停。
+// 默认搜索策略只控制参与搜索的站点，不控制影视源本身的启停。
 const DEFAULT_SEARCHABLE_SOURCES = new Set([
   'haohua', 'dzzy', 'ffzy', 'bfzy', 'guangsu', 'huya', 'jisu', 'guazi', 'fan_nomi', 'jinying',
-  'cheese', 'moli', 'bdzy', '360zy', 'lzi', 'maoyan', 'modu', 'juliang', 'ryzy', 'dyttzy',
-  'jianpian', 'xgzy', 'suboziyuan', 'fhw88', 'ukuzy', 'iqiyi', 'xinlang', 'zuida', 'cz4k', 'ikanbot'
+  'cheese', 'moli', 'bdzy', '360zy', 'lzi', 'maoyan', 'modu', 'juliang', 'dyttzy',
+  'jianpian', 'xgzy', 'suboziyuan', 'fhw88', 'ukuzy', 'iqiyi', 'xinlang', 'zuida', 'ikanbot'
 ])
 const SOURCE_ALIASES: Record<string, string> = {
   moli: 'fan_moli',

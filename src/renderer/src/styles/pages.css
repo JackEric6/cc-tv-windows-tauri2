@@ -1688,7 +1688,7 @@
 }
 
 .player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control).vjs-picture-in-picture-control.vjs-control {
-  transform: translateY(-5px);
+  transform: translateY(5px);
 }
 
 .player-stage .video-js .vjs-load-progress,

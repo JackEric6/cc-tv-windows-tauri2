@@ -161,7 +161,9 @@ export function Search(): JSX.Element {
 
   const displayResults = isBrowsing
     ? merged
-    : sourceWithPosterFallback.flatMap((result) => result.list)
+    : searchPending
+      ? []
+      : sourceWithPosterFallback.flatMap((result) => result.list)
   const visible = siteFilter ? displayResults.filter((v) => v.siteKey === siteFilter) : displayResults
 
   const okSites = sourceWithPosterFallback.filter((r) => r.ok)

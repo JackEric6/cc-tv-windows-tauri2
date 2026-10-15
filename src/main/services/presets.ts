@@ -75,7 +75,7 @@ const CONGCONG_SITES = [
     }
   }),
   { key: 'ikanbot', name: '爱看', type: 1, api: 'https://www1.ikanbot.com', searchable: 1, quickSearch: 1, filterable: 1, timeout: 25, enabled: true },
-  { key: 'cz4k', name: '厂长', type: 1, api: 'https://www.cz4k.com', searchable: 1, quickSearch: 1, filterable: 0, timeout: 30, enabled: true },
+  { key: 'cz4k', name: '厂长', type: 1, api: 'https://www.cz4k.com', searchable: 0, quickSearch: 0, filterable: 0, timeout: 30, enabled: true },
   { key: 'fan_nomi', name: '糯米', type: 1, api: 'https://vip.wwgz.cn:5200', searchable: 1, quickSearch: 1, filterable: 0, timeout: 15, enabled: true }
 ]
 
@@ -256,6 +256,7 @@ async function migrateBundledSources(): Promise<boolean> {
         ...site,
         ...(String(site.name ?? '') === '素博资源' ? { name: '素博' } : {}),
         ...(knownAndroidSource ? { searchable: searchable ? 1 : 0 } : {}),
+        ...(key === 'cz4k' || key === 'ryzy' ? { quickSearch: 0 } : {}),
         ...(key === 'ikanbot' ? { filterable: 1 } : {}),
         ...(knownAndroidSource && !searchable ? { enabled: true } : {})
       }

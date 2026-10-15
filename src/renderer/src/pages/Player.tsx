@@ -115,6 +115,7 @@ export function Player(): JSX.Element {
   const previewHideTimerRef = useRef<number | undefined>(undefined)
   const previewSeekedAtRef = useRef(0)
   const previewHoveringRef = useRef(false)
+  const previewPlayerErroredRef = useRef(false)
   const previewLastXRef = useRef(0)
   const heldPlaybackRateRef = useRef<{
     player: VideoPlayer
@@ -793,6 +794,13 @@ export function Player(): JSX.Element {
       window.clearTimeout(previewHideTimerRef.current)
       previewHideTimerRef.current = undefined
     }
+    if (!previewHoveringRef.current && previewPlayerErroredRef.current) {
+      const failedPlayer = previewPlayerRef.current
+      if (failedPlayer && !failedPlayer.isDisposed()) failedPlayer.dispose()
+      previewPlayerRef.current = null
+      previewSourceKeyRef.current = ''
+      previewPlayerErroredRef.current = false
+    }
     previewHoveringRef.current = true
     previewLastXRef.current = x
     setPreviewFrameReady(false)
@@ -822,9 +830,10 @@ export function Player(): JSX.Element {
   }, [clearProgressPreview])
 
   useEffect(() => {
+    const progressControl = containerRef.current?.querySelector('.vjs-progress-control')
     const holder = containerRef.current?.querySelector('.vjs-progress-holder')
     const volumePanel = containerRef.current?.querySelector<HTMLElement>('.vjs-volume-panel')
-    if (!(holder instanceof HTMLElement)) return
+    if (!(progressControl instanceof HTMLElement) || !(holder instanceof HTMLElement)) return
     const onMove = (event: PointerEvent): void => updateProgressPreviewAt(event.clientX, holder.getBoundingClientRect())
     const onLeave = (): void => hideProgressPreview()
     const onVolumeIntent = (): void => clearProgressPreview()
@@ -839,16 +848,16 @@ export function Player(): JSX.Element {
       if (direction > 0) activePlayer?.muted(false)
       activePlayer?.volume(next)
     }
-    holder.addEventListener('pointerenter', onMove)
-    holder.addEventListener('pointermove', onMove)
-    holder.addEventListener('pointerleave', onLeave)
+    progressControl.addEventListener('pointerenter', onMove)
+    progressControl.addEventListener('pointermove', onMove)
+    progressControl.addEventListener('pointerleave', onLeave)
     volumePanel?.addEventListener('pointerenter', onVolumeIntent)
     volumePanel?.addEventListener('pointermove', onVolumeIntent)
     volumePanel?.addEventListener('wheel', onVolumeWheel, { passive: false })
     return () => {
-      holder.removeEventListener('pointerenter', onMove)
-      holder.removeEventListener('pointermove', onMove)
-      holder.removeEventListener('pointerleave', onLeave)
+      progressControl.removeEventListener('pointerenter', onMove)
+      progressControl.removeEventListener('pointermove', onMove)
+      progressControl.removeEventListener('pointerleave', onLeave)
       volumePanel?.removeEventListener('pointerenter', onVolumeIntent)
       volumePanel?.removeEventListener('pointermove', onVolumeIntent)
       volumePanel?.removeEventListener('wheel', onVolumeWheel)
@@ -859,6 +868,7 @@ export function Player(): JSX.Element {
     clearProgressPreview()
     setPreviewFrameReady(false)
     const sourceKey = playbackSource ? `${playbackSource.url}\u001f${playbackSource.hls}` : ''
+    previewPlayerErroredRef.current = false
     if (previewPlayerRef.current && previewSourceKeyRef.current !== sourceKey) {
       previewPlayerRef.current.dispose()
       previewPlayerRef.current = null
@@ -872,6 +882,11 @@ export function Player(): JSX.Element {
     if (!host) return
     const sourceKey = `${playbackSource.url}\u001f${playbackSource.hls}`
     let previewPlayer = previewPlayerRef.current
+    if (previewPlayer?.isDisposed()) {
+      previewPlayer = null
+      previewPlayerRef.current = null
+      previewSourceKeyRef.current = ''
+    }
     if (!previewPlayer) {
       previewPlayer = createVideoPlayer(host, {
         url: playbackSource.url,
@@ -890,7 +905,10 @@ export function Player(): JSX.Element {
       }
       previewPlayer.on('loadeddata', markFrameReady)
       previewPlayer.on('seeked', markFrameReady)
-      previewPlayer.on('error', () => setPreviewFrameReady(false))
+      previewPlayer.on('error', () => {
+        previewPlayerErroredRef.current = true
+        setPreviewFrameReady(false)
+      })
     }
     schedulePreviewSeek(progressPreview.seconds)
   }, [progressPreview, playbackSource, schedulePreviewSeek, settings?.accent])

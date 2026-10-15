@@ -9,12 +9,96 @@ import { searchCongcongSource } from './congcongSources'
 import { isNativeAdaptedSite, searchNativeSite } from './nativeSites'
 
 const DEFAULT_LIMIT = 30
+const SEARCH_CACHE_TTL_MS = 60_000
+const SEARCH_CACHE_LIMIT = 120
+const SEARCH_SITE_MIN_WAIT_MS = 10_000
+const SEARCH_SITE_MAX_WAIT_MS = 30_000
+
+interface SearchCacheEntry {
+  createdAt: number
+  result: SiteSearchResult
+}
+
+const searchCache = new Map<string, SearchCacheEntry>()
+const searchInFlight = new Map<string, Promise<SiteSearchResult>>()
 
 /** 搜索请求的取消令牌：发起新搜索时旧的那一批会自行停下 */
 let currentToken = 0
 
 export function cancelSearch(): void {
   currentToken++
+}
+
+function searchCacheKey(site: Site, keyword: string, limit: number, timeout: number): string {
+  return JSON.stringify([keyword, limit, timeout, site])
+}
+
+function copySearchResult(result: SiteSearchResult, cached = false): SiteSearchResult {
+  return {
+    ...result,
+    ms: cached ? 0 : result.ms,
+    list: result.list.map((vod) => ({ ...vod }))
+  }
+}
+
+function readSearchCache(key: string): SiteSearchResult | undefined {
+  const entry = searchCache.get(key)
+  if (!entry) return undefined
+  if (Date.now() - entry.createdAt >= SEARCH_CACHE_TTL_MS) {
+    searchCache.delete(key)
+    return undefined
+  }
+  searchCache.delete(key)
+  searchCache.set(key, entry)
+  return copySearchResult(entry.result, true)
+}
+
+function writeSearchCache(key: string, result: SiteSearchResult): void {
+  if (!result.ok) return
+  searchCache.delete(key)
+  searchCache.set(key, { createdAt: Date.now(), result: copySearchResult(result) })
+  while (searchCache.size > SEARCH_CACHE_LIMIT) {
+    const oldest = searchCache.keys().next().value
+    if (!oldest) break
+    searchCache.delete(oldest)
+  }
+}
+
+function searchSiteCached(site: Site, keyword: string, limit: number, timeout: number): Promise<SiteSearchResult> {
+  const key = searchCacheKey(site, keyword, limit, timeout)
+  const cached = readSearchCache(key)
+  if (cached) return Promise.resolve(cached)
+
+  const existing = searchInFlight.get(key)
+  if (existing) return existing.then((result) => copySearchResult(result))
+
+  const request = searchSite(site, keyword, limit, timeout)
+    .then((result) => {
+      writeSearchCache(key, result)
+      return result
+    })
+    .finally(() => {
+      searchInFlight.delete(key)
+    })
+  searchInFlight.set(key, request)
+  return request.then((result) => copySearchResult(result))
+}
+
+function withSiteSearchDeadline(
+  site: Site,
+  promise: Promise<SiteSearchResult>,
+  timeout: number
+): Promise<SiteSearchResult> {
+  const deadline = Math.max(SEARCH_SITE_MIN_WAIT_MS, Math.min(SEARCH_SITE_MAX_WAIT_MS, timeout * 1000))
+  let timer: NodeJS.Timeout | undefined
+  const timedOut = new Promise<SiteSearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(fail(site, `搜索超过 ${Math.round(deadline / 1000)} 秒，已跳过该站点`, deadline))
+    }, deadline)
+  })
+  return Promise.race([promise, timedOut]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
 }
 
 /** 使用安卓端同款爱奇艺联想接口；失败由调用方回退到本地片名单。 */
@@ -141,7 +225,8 @@ async function searchHtml(site: Site, wd: string, limit: number, timeout: number
 export async function searchSite(
   site: Site,
   wd: string,
-  limit = DEFAULT_LIMIT
+  limit = DEFAULT_LIMIT,
+  timeoutOverride?: number
 ): Promise<SiteSearchResult> {
   const start = Date.now()
   if (site.unsupported) return fail(site, site.unsupported)
@@ -149,7 +234,7 @@ export async function searchSite(
   if (!site.api) return fail(site, '站点未配置接口地址')
 
   try {
-    const timeout = site.timeout ?? (await getSettings()).timeout
+    const timeout = site.timeout ?? timeoutOverride ?? (await getSettings()).timeout
     let list: Vod[]
     if (isNativeAdaptedSite(site.key)) {
       list = await searchNativeSite(site, wd, limit)
@@ -211,26 +296,52 @@ export async function searchAll(
   )
   const limit = options.limitPerSite ?? DEFAULT_LIMIT
 
-  const results: SiteSearchResult[] = []
-  let cursor = 0
+  const results: Array<SiteSearchResult | undefined> = Array(targets.length)
+  const pendingIndexes: number[] = []
   let done = 0
+  for (let index = 0; index < targets.length; index++) {
+    const site = targets[index]
+    const timeout = site.timeout ?? settings.timeout
+    const cached = readSearchCache(searchCacheKey(site, keyword, limit, timeout))
+    if (!cached) {
+      pendingIndexes.push(index)
+      continue
+    }
+    results[index] = cached
+    done++
+    onResult?.(cached, done, targets.length)
+  }
+
+  let cursor = 0
 
   const worker = async (): Promise<void> => {
     for (;;) {
       if (token !== currentToken) return
-      const index = cursor++
-      if (index >= targets.length) return
-      const result = await searchSite(targets[index], keyword, limit)
+      const pendingIndex = cursor++
+      if (pendingIndex >= pendingIndexes.length) return
+      const index = pendingIndexes[pendingIndex]
+      const site = targets[index]
+      const timeout = site.timeout ?? settings.timeout
+      const result = await withSiteSearchDeadline(
+        site,
+        searchSiteCached(site, keyword, limit, timeout),
+        timeout
+      )
       if (token !== currentToken) return
-      results.push(result)
+      results[index] = result
       done++
       onResult?.(result, done, targets.length)
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
+    Array.from({ length: Math.min(concurrency, pendingIndexes.length) }, () => worker())
   )
 
-  return { wd: keyword, ms: Date.now() - started, total: targets.length, results }
+  return {
+    wd: keyword,
+    ms: Date.now() - started,
+    total: targets.length,
+    results: results.filter((result): result is SiteSearchResult => Boolean(result))
+  }
 }

@@ -176,6 +176,11 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
     site.searchable = false
     site.quickSearch = false
   }
+  if (site.key === 'cz4k' || site.key === 'ryzy') {
+    site.searchable = false
+    site.searchEnabled = false
+    site.quickSearch = false
+  }
   return site
 }
 

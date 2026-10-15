@@ -53,6 +53,8 @@ export async function getSites(): Promise<Site[]> {
       const ov = overrides[site.key]
       const defaultSearchEnabled = site.key === 'ikanbot' && site.sourceName === '丛丛影视内置源'
         ? true
+        : site.key === 'cz4k' || site.key === 'ryzy'
+          ? false
         : Boolean(site.searchable)
       const searchEnabled = site.key === 'subo' ? false : ov?.searchEnabled ?? defaultSearchEnabled
       const merged: Site = {
