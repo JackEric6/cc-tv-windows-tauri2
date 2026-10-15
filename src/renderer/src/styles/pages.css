@@ -1640,6 +1640,7 @@
 
 .player-fullscreen-mark {
   position: relative;
+  top: 3px;
   display: inline-block;
   flex: 0 0 18px;
   width: 18px;
