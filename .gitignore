@@ -1,0 +1,15 @@
+node_modules/
+out/
+dist/
+release/
+src-tauri/target/
+src-tauri/resources/node.exe
+*.log
+.DS_Store
+.vite/
+
+# 便携数据目录（配置源、站点覆盖、设置、浏览器缓存）
+data/
+
+# 截图包含本机安装路径和个人设置，不属于运行资源
+shots/

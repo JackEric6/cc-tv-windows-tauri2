@@ -1,0 +1,46 @@
+{
+  "name": "congcong-tv-windows-tauri2",
+  "version": "1.0.12",
+  "description": "丛丛影视 Windows 桌面客户端（Tauri 2 + WebView2 Evergreen）",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "npm run prepare:sidecar && tauri dev",
+    "dev:web": "vite --host 127.0.0.1",
+    "prepare:sidecar": "node scripts/build-tauri-sidecar.mjs",
+    "build:sidecar": "node scripts/build-tauri-sidecar.mjs",
+    "build": "npm run build:sidecar && vite build",
+    "build:win": "tauri build --bundles nsis",
+    "tauri": "tauri",
+    "selftest": "node scripts/selftest.mjs",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-shell": "^2.3.3",
+    "cheerio": "^1.2.0",
+    "iconv-lite": "^0.7.3",
+    "lossless-json": "^4.3.1",
+    "pac-proxy-agent": "^7.2.0",
+    "undici": "^7.30.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@videojs/themes": "^1.0.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "typescript": "^7.0.2",
+    "video.js": "^8.24.1",
+    "vite": "^7.3.6",
+    "zustand": "^5.0.15"
+  }
+}

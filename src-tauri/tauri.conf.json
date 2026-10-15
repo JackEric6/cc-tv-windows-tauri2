@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "丛丛影视",
+  "version": "1.0.12",
+  "identifier": "com.congcong.tv.windows.tauri2",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist/ui"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "丛丛影视",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: http: https:; media-src 'self' data: blob: http: https:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http: https: ws: wss:; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["../build/icon.ico", "../build/icon.png"],
+    "resources": {
+      "../dist/backend.cjs": "backend.cjs",
+      "resources/node.exe": "node.exe"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true,
+        "language": "zh-CN"
+      },
+      "nsis": {
+        "oneClick": false,
+        "perMachine": false,
+        "allowToChangeInstallationDirectory": true,
+        "createDesktopShortcut": true,
+        "createStartMenuShortcut": true,
+        "shortcutName": "丛丛影视"
+      }
+    }
+  }
+}
