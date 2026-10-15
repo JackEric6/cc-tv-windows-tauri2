@@ -209,9 +209,9 @@ fn node_compatible_path(path: &Path) -> PathBuf {
 
         let path: Vec<u16> = path.as_os_str().encode_wide().collect();
         let verbatim_prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
-        if let Some(remainder) = path.strip_prefix(&verbatim_prefix) {
+        if let Some(remainder) = path.as_slice().strip_prefix(verbatim_prefix.as_slice()) {
             let unc_prefix: Vec<u16> = "UNC\\".encode_utf16().collect();
-            if let Some(unc_path) = remainder.strip_prefix(&unc_prefix) {
+            if let Some(unc_path) = remainder.strip_prefix(unc_prefix.as_slice()) {
                 let mut compatible: Vec<u16> = r"\\".encode_utf16().collect();
                 compatible.extend_from_slice(unc_path);
                 return PathBuf::from(std::ffi::OsString::from_wide(&compatible));
