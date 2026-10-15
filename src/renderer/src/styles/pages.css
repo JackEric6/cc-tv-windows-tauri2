@@ -1625,7 +1625,6 @@
   order: 6;
   width: 42px;
   flex: 0 0 42px;
-  margin-left: auto;
 }
 
 .player-stage .video-js.vjs-theme-city .vjs-fullscreen-control {
@@ -1683,11 +1682,11 @@
   color: #fff;
 }
 
-.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control) {
-  transform: translateY(5px);
+.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control).vjs-picture-in-picture-control.vjs-control {
+  margin-left: auto;
 }
 
-.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control).vjs-picture-in-picture-control.vjs-control {
+.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control) {
   transform: translateY(5px);
 }
 
