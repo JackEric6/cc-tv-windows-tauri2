@@ -31,7 +31,10 @@ jobs:
 
       - name: Show installer size
         shell: pwsh
-        run: Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | ForEach-Object { "{0}: {1:N2} MiB" -f $_.Name, ($_.Length / 1MB) }
+        run: |
+          Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | ForEach-Object {
+            "{0}: {1:N2} MiB" -f $_.Name, ($_.Length / 1MB)
+          }
 
       - uses: actions/upload-artifact@v4
         with:
