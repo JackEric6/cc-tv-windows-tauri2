@@ -36,16 +36,11 @@
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
-        "silent": true,
-        "language": "zh-CN"
+        "silent": true
       },
       "nsis": {
-        "oneClick": false,
-        "perMachine": false,
-        "allowToChangeInstallationDirectory": true,
-        "createDesktopShortcut": true,
-        "createStartMenuShortcut": true,
-        "shortcutName": "丛丛影视"
+        "installMode": "currentUser",
+        "languages": ["SimpChinese"]
       }
     }
   }
