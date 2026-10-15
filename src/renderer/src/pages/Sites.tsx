@@ -24,6 +24,28 @@ export function Sites(): JSX.Element {
   const [testing, setTesting] = useState<Record<string, boolean>>({})
   const [health, setHealth] = useState<Record<string, { ok: boolean; text: string }>>({})
 
+  async function updateSiteEnabled(site: Site, enabled: boolean): Promise<void> {
+    try {
+      await setSiteEnabled(site.key, enabled)
+    } catch (err) {
+      notify(`${site.name} 设置失败：${(err as Error).message}`, 'danger')
+      await refreshSites().catch(() => undefined)
+    }
+  }
+
+  async function updateSiteAreaEnabled(
+    site: Site,
+    area: 'home' | 'search' | 'category',
+    enabled: boolean
+  ): Promise<void> {
+    try {
+      await setSiteAreaEnabled(site.key, area, enabled)
+    } catch (err) {
+      notify(`${site.name} 设置失败：${(err as Error).message}`, 'danger')
+      await refreshSites().catch(() => undefined)
+    }
+  }
+
   const sourceNames = useMemo(
     () => Array.from(new Set(sites.map((s) => s.sourceName))).sort(),
     [sites]
@@ -176,7 +198,7 @@ export function Sites(): JSX.Element {
                 <Switch
                   checked={site.enabled}
                   disabled={Boolean(site.unsupported)}
-                  onChange={(v) => void setSiteEnabled(site.key, v)}
+                  onChange={(v) => void updateSiteEnabled(site, v)}
                   title={translate(site.unsupported ?? '启用 / 停用该站点')}
                 />
 
@@ -218,15 +240,15 @@ export function Sites(): JSX.Element {
                   <div className="site-area-toggles" aria-label={`${site.name}的区域开关`}>
                     <label title={translate("控制该站点是否显示在首页片单中")}>
                       <span>{translate("首页")}</span>
-                      <Switch checked={site.homeEnabled} onChange={(value) => void setSiteAreaEnabled(site.key, 'home', value)} />
+                      <Switch checked={site.homeEnabled} onChange={(value) => void updateSiteAreaEnabled(site, 'home', value)} />
                     </label>
                     <label title={translate("控制该站点是否参与聚合搜索")}>
                       <span>{translate("搜索")}</span>
-                      <Switch checked={site.searchEnabled} onChange={(value) => void setSiteAreaEnabled(site.key, 'search', value)} />
+                      <Switch checked={site.searchEnabled} onChange={(value) => void updateSiteAreaEnabled(site, 'search', value)} />
                     </label>
                     <label title={translate("控制该站点是否参与分类浏览")}>
                       <span>{translate("分类")}</span>
-                      <Switch checked={site.categoryEnabled} onChange={(value) => void setSiteAreaEnabled(site.key, 'category', value)} />
+                      <Switch checked={site.categoryEnabled} onChange={(value) => void updateSiteAreaEnabled(site, 'category', value)} />
                     </label>
                   </div>
                   <button

@@ -597,6 +597,8 @@ export const useApp = create<AppState>((set, get) => ({
 
   async setSiteEnabled(key, enabled) {
     await window.api.sites.setEnabled(key, enabled)
+    get().clearSearch()
+    await window.api.search.cancel().catch(() => undefined)
     set((s) => ({
       sites: s.sites.map((x) => (x.key === key ? { ...x, enabled } : x)),
       ...staleCatalog()
@@ -605,6 +607,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   async setSiteAreaEnabled(key, area, enabled) {
     await window.api.sites.setAreaEnabled(key, area, enabled)
+    if (area === 'search') {
+      get().clearSearch()
+      await window.api.search.cancel().catch(() => undefined)
+    }
     set((s) => ({
       sites: s.sites.map((x) => {
         if (x.key !== key) return x
@@ -619,6 +625,8 @@ export const useApp = create<AppState>((set, get) => ({
 
   async setSitesEnabled(keys, enabled) {
     await window.api.sites.setAllEnabled(keys, enabled)
+    get().clearSearch()
+    await window.api.search.cancel().catch(() => undefined)
     const set0 = new Set(keys)
     set((s) => ({
       sites: s.sites.map((x) => (set0.has(x.key) ? { ...x, enabled } : x)),

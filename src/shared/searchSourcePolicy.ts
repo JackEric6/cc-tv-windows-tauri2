@@ -24,7 +24,7 @@ const SEARCH_RESULT_ORDER = new Map([
 const DEFAULT_SEARCHABLE_SOURCES = new Set([
   'haohua', 'dzzy', 'ffzy', 'bfzy', 'guangsu', 'huya', 'jisu', 'guazi', 'fan_nomi', 'jinying',
   'cheese', 'moli', 'bdzy', '360zy', 'lzi', 'maoyan', 'modu', 'juliang', 'dyttzy',
-  'jianpian', 'xgzy', 'suboziyuan', 'fhw88', 'ukuzy', 'iqiyi', 'xinlang', 'zuida', 'ikanbot'
+  'jianpian', 'xgzy', 'suboziyuan', 'fhw88', 'ukuzy', 'xinlang', 'zuida', 'ikanbot'
 ])
 const SOURCE_ALIASES: Record<string, string> = {
   moli: 'fan_moli',

@@ -9,6 +9,7 @@ import { readStore, writeStore } from './store'
 import { isNativeAdaptedSite, searchNativeSite } from './nativeSites'
 
 const NAME = 'sites'
+const DEFAULT_SEARCH_DISABLED_KEYS = new Set(['cz4k', 'ryzy', 'subo', 'iqiyi', 'uuzy'])
 
 export interface SiteOverride {
   enabled?: boolean
@@ -53,10 +54,10 @@ export async function getSites(): Promise<Site[]> {
       const ov = overrides[site.key]
       const defaultSearchEnabled = site.key === 'ikanbot' && site.sourceName === '丛丛影视内置源'
         ? true
-        : site.key === 'cz4k' || site.key === 'ryzy'
+        : DEFAULT_SEARCH_DISABLED_KEYS.has(site.key.trim().toLowerCase())
           ? false
         : Boolean(site.searchable)
-      const searchEnabled = site.key === 'subo' ? false : ov?.searchEnabled ?? defaultSearchEnabled
+      const searchEnabled = ov?.searchEnabled ?? defaultSearchEnabled
       const merged: Site = {
         ...site,
         homeEnabled: ov?.homeEnabled ?? true,
