@@ -423,8 +423,7 @@ export function Player(): JSX.Element {
         url,
         accent: settings?.accent,
         hls,
-        toggleFullscreen: () => { void toggleFullscreen() },
-        onControlError: (message) => notify(`播放器控制失败：${message}`, 'danger')
+        toggleFullscreen: () => { void toggleFullscreen() }
       })
       playerBox.current = player
       playerRef.current = player

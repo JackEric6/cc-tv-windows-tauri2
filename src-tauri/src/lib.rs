@@ -10,6 +10,8 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
+const CZ4K_WEBVIEW_DEADLINE_MS: u64 = 30_000;
+
 struct BackendProcess {
     base_url: String,
     token: String,
@@ -90,7 +92,7 @@ fn start_cz4k_webview(
               }});
             }} catch {{ sent = false; }}
           }};
-          const deadline = Date.now() + 60000;
+          const deadline = Date.now() + {timeout_ms};
           let safeSince = 0;
           const check = async () => {{
             if (sent) return;
@@ -120,11 +122,12 @@ fn start_cz4k_webview(
             setTimeout(check, 500);
           }};
           addEventListener('load', () => setTimeout(check, 1500), {{ once: true }});
-          setTimeout(check, 60000);
+          setTimeout(check, {timeout_ms});
         }})();"#,
         request_id = request_id,
         url = url,
-        endpoint = endpoint
+        endpoint = endpoint,
+        timeout_ms = CZ4K_WEBVIEW_DEADLINE_MS
     );
 
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(origin))

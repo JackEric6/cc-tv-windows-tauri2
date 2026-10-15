@@ -9,6 +9,8 @@ const NOMI_NBY_API = 'https://api.nbyjson.top:7788/api/'
 const NOMI_NBY_KEY = 'tviKuMb3MlqCW1I6gE'
 const IKANBOT_ORIGIN = 'https://www1.ikanbot.com'
 const CZ4K_ORIGIN = 'https://www.cz4k.com'
+const CZ4K_PAGE_TIMEOUT_MS = 30_000
+const CZ4K_SEARCH_TIMEOUT_MS = 15_000
 const IKANBOT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
 const NOMI_UA = 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
 const cookies = new Map<string, Map<string, string>>()
@@ -331,11 +333,11 @@ interface Cz4kPage {
   resourceUrls: string[]
 }
 
-async function fetchCz4kPage(url: string): Promise<Cz4kPage> {
+async function fetchCz4kPage(url: string, timeoutMs = CZ4K_PAGE_TIMEOUT_MS): Promise<Cz4kPage> {
   const target = new URL(url)
   if (target.hostname !== 'cz4k.com' && target.hostname !== 'www.cz4k.com') throw new Error('厂长请求地址不属于 cz4k.com')
   try {
-    const page = await requestCz4kBrowserPage(target.href, `${CZ4K_ORIGIN}/`)
+    const page = await requestCz4kBrowserPage(target.href, `${CZ4K_ORIGIN}/`, timeoutMs)
     if (page.cookies) {
       const jar = cookies.get(target.host) ?? new Map<string, string>()
       cookies.set(target.host, jar)
@@ -350,8 +352,8 @@ async function fetchCz4kPage(url: string): Promise<Cz4kPage> {
   }
 }
 
-async function fetchCz4k(url: string): Promise<string> {
-  return (await fetchCz4kPage(url)).html
+async function fetchCz4k(url: string, timeoutMs = CZ4K_PAGE_TIMEOUT_MS): Promise<string> {
+  return (await fetchCz4kPage(url, timeoutMs)).html
 }
 
 function cz4kSearch(site: Site, html: string, keyword: string, limit: number): Vod[] {
@@ -422,7 +424,7 @@ export async function searchNativeSite(site: Site, keyword: string, limit: numbe
   }
   const url = new URL('/nimasile', origin)
   url.searchParams.set('q', keyword)
-  return cz4kSearch(site, await fetchCz4k(url.href), keyword, limit)
+  return cz4kSearch(site, await fetchCz4k(url.href, CZ4K_SEARCH_TIMEOUT_MS), keyword, limit)
 }
 
 export async function getNativeSiteDetail(site: Site, id: string): Promise<VodDetail> {

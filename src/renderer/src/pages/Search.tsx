@@ -43,7 +43,7 @@ export function Search(): JSX.Element {
   useEffect(() => {
     if (!wdParam || !usable.length) return
     if (lastRun.current === wdParam) return
-    if (search.wd === wdParam && !search.running && search.results.length) {
+    if (search.wd === wdParam && (search.running || search.results.length > 0)) {
       lastRun.current = wdParam
       setSiteFilter(null)
       return
@@ -159,13 +159,9 @@ export function Search(): JSX.Element {
     }
   }, [merged, orderKey, browse.page])
 
-  // Adult filtering needs the full batch so a later source's label cannot make a visible
-  // same-title result disappear. With filtering off, preserve progressive per-source results.
   const displayResults = isBrowsing
     ? merged
-    : filterAdult && searchPending
-      ? []
-      : sourceWithPosterFallback.flatMap((result) => result.list)
+    : sourceWithPosterFallback.flatMap((result) => result.list)
   const visible = siteFilter ? displayResults.filter((v) => v.siteKey === siteFilter) : displayResults
 
   const okSites = sourceWithPosterFallback.filter((r) => r.ok)

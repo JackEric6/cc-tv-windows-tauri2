@@ -138,14 +138,14 @@ export function emitBackendEvent(name: string, payload: unknown): void {
   process.stdout.write(`${JSON.stringify({ type: 'event', name, payload })}\n`)
 }
 
-export function requestCz4kBrowserPage(url: string, referrer: string): Promise<BrowserPageResult> {
+export function requestCz4kBrowserPage(url: string, referrer: string, timeoutMs = 30_000): Promise<BrowserPageResult> {
   const requestId = randomUUID()
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingBrowserPages.delete(requestId)
       emitBackendEvent('webview-close', { requestId })
-      reject(new Error('厂长 SafeLine 验证超时'))
-    }, 65_000)
+      reject(new Error(`厂长页面等待超时（${Math.ceil(timeoutMs / 1000)} 秒）`))
+    }, timeoutMs)
     pendingBrowserPages.set(requestId, { resolve, reject, timer })
     emitBackendEvent('webview-fetch', { requestId, url, referrer })
   })
