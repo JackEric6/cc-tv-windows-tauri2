@@ -9,6 +9,7 @@ export interface VideoOptions {
   poster?: string
   hls?: boolean
   toggleFullscreen?: () => void
+  onControlError?: (message: string) => void
   preview?: boolean
 }
 
@@ -50,6 +51,49 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
   }
   player.on('volumechange', updateVolumeLabel)
   player.ready(updateVolumeLabel)
+  if (!options.preview) {
+    player.ready(() => {
+      const controlBar = player.getChild('controlBar') as any
+      const bindClick = (name: string, action: () => void | Promise<void>): void => {
+        const element = controlBar?.getChild(name)?.el() as HTMLElement | undefined
+        if (!element) return
+        const onClick = (event: MouseEvent): void => {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          const reportError = (error: unknown): void => {
+            const message = error instanceof Error ? error.message : String(error)
+            options.onControlError?.(message)
+            if (!options.onControlError) console.error('[player] 控件操作失败', error)
+          }
+          try {
+            void Promise.resolve(action()).catch(reportError)
+          } catch (error) {
+            reportError(error)
+          }
+        }
+        element.addEventListener('click', onClick, true)
+        player.one('dispose', () => element.removeEventListener('click', onClick, true))
+      }
+
+      bindClick('playToggle', async () => {
+        if (player.paused()) await Promise.resolve(player.play())
+        else player.pause()
+      })
+      bindClick('muteToggle', () => { player.muted(!player.muted()) })
+      bindClick('pictureInPictureToggle', async () => {
+        const media = player.el().querySelector('video')
+        if (!media) throw new Error('没有可用的视频画面')
+        if (document.pictureInPictureElement === media) {
+          await document.exitPictureInPicture()
+          return
+        }
+        if (!document.pictureInPictureEnabled || typeof media.requestPictureInPicture !== 'function') {
+          throw new Error('当前 WebView2 不支持画中画')
+        }
+        await media.requestPictureInPicture()
+      })
+    })
+  }
   if (options.toggleFullscreen) {
     const fullscreenButton = (player.getChild('controlBar') as any)?.getChild('fullscreenToggle')
     const buttonElement = fullscreenButton?.el() as HTMLElement | undefined

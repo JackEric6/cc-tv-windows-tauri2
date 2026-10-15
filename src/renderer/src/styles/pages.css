@@ -1624,12 +1624,14 @@
 .player-stage .video-js.vjs-theme-city .vjs-picture-in-picture-control {
   order: 6;
   width: 42px;
+  flex: 0 0 42px;
   margin-left: auto;
 }
 
 .player-stage .video-js.vjs-theme-city .vjs-fullscreen-control {
   order: 7;
   width: 42px;
+  flex: 0 0 42px;
   border-radius: 50%;
 }
 
@@ -1679,24 +1681,6 @@
 .player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-fullscreen-control:hover {
   background: color-mix(in srgb, var(--video-accent, #2563EB) 28%, transparent);
   color: #fff;
-}
-
-.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control).vjs-picture-in-picture-control.vjs-control {
-  position: absolute;
-  right: 60px;
-  bottom: 2px;
-  margin: 0;
-}
-
-.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control).vjs-fullscreen-control.vjs-control {
-  position: absolute;
-  right: 14px;
-  bottom: 7px;
-  margin: 0;
-}
-
-.player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar {
-  padding-right: 106px;
 }
 
 .player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-control-bar > :not(.vjs-progress-control) {

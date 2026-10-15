@@ -21,6 +21,7 @@ export function OfflinePlayer(): JSX.Element {
   const hideTimer = useRef<number | undefined>(undefined)
   const settings = useApp((state) => state.settings)
   const recordHistory = useApp((state) => state.recordHistory)
+  const notify = useApp((state) => state.notify)
   const [task, setTask] = useState<OfflineTask | null>(null)
   const [error, setError] = useState('')
   const [cues, setCues] = useState<DanmakuCue[]>([])
@@ -83,7 +84,8 @@ export function OfflinePlayer(): JSX.Element {
           accent: settings?.accent,
           poster: playback.posterUrl,
           hls: item.mediaFile.toLowerCase().endsWith('.m3u8'),
-          toggleFullscreen: () => { void toggleFullscreen() }
+          toggleFullscreen: () => { void toggleFullscreen() },
+          onControlError: (message) => notify(`播放器控制失败：${message}`, 'danger')
         })
         playerRef.current = mounted
         setPlayer(mounted)

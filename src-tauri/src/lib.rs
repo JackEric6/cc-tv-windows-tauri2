@@ -239,7 +239,8 @@ fn start_backend(app: &AppHandle) -> Result<BackendProcess, Box<dyn std::error::
     let port = listener.local_addr()?.port();
     drop(listener);
     let token = uuid::Uuid::new_v4().simple().to_string();
-    let mut child = Command::new(node_path)
+    let mut command = Command::new(node_path);
+    command
         .arg(node_compatible_path(&backend_path))
         .arg("--port")
         .arg(port.to_string())
@@ -249,8 +250,13 @@ fn start_backend(app: &AppHandle) -> Result<BackendProcess, Box<dyn std::error::
         .env("CCTV_APP_VERSION", env!("CARGO_PKG_VERSION"))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()?;
+        .stderr(Stdio::inherit());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command.spawn()?;
 
     let stdout = child.stdout.take().ok_or("failed to capture sidecar output")?;
     let (ready_tx, ready_rx) = mpsc::channel();
