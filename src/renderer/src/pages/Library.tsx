@@ -47,21 +47,26 @@ export function Library(): JSX.Element {
           <EmptyState
             icon={<Icon name="star" size={26} />}
             title={translate("还没有收藏")}
-            desc={translate('在详情页点「收藏」，影片就会出现在这里，方便下次直接找到。')}
+            desc={translate('在播放页点「收藏」，影片就会出现在这里，方便下次直接找到。')}
           />
         )
       }
       return (
         <div className="poster-grid">
-          {favorites.map((item: FavoriteItem) => (
-            <div className="vod-card" key={libraryKey(item.siteKey, item.vodId)}>
-              <Link to={`/detail/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}`}>
+          {favorites.map((item: FavoriteItem) => {
+            const previous = history.flatMap((group) => group.items)
+              .find((entry) => entry.siteKey === item.siteKey && entry.vodId === item.vodId)
+            const playTo = `/play/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}/${previous?.lineIndex ?? 0}/${previous?.epIndex ?? 0}`
+            return (
+              <div className="vod-card" key={libraryKey(item.siteKey, item.vodId)}>
+              <Link to={playTo} state={{ playbackReturnTo: '/library?tab=favorites' }}>
                 <Poster src={item.pic} name={item.name} />
               </Link>
               <div className="vod-card-body">
                 <Link
                   className="vod-card-title truncate"
-                  to={`/detail/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}`}
+                  to={playTo}
+                  state={{ playbackReturnTo: '/library?tab=favorites' }}
                   title={item.name}
                 >
                   {item.name}
@@ -82,8 +87,9 @@ export function Library(): JSX.Element {
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )
     }
@@ -117,7 +123,10 @@ export function Library(): JSX.Element {
               </Link>
               <div className="history-main">
                 <div className="history-title">
-                  <Link to={`/detail/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}`}>
+                  <Link
+                    to={playTo}
+                    state={item.offlineTaskId ? undefined : { playbackReturnTo: '/library?tab=history' }}
+                  >
                     {group.name}
                   </Link>
                 </div>

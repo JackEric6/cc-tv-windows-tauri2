@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { matchPath, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
+import { matchPath, NavLink, Route, Routes, useLocation, useNavigationType, useSearchParams } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
 import { Toasts } from '@/components/Toasts'
@@ -8,8 +8,8 @@ import { useApp } from '@/store/useApp'
 import { setUiLanguage, translate } from '@/i18n'
 import { Home } from '@/pages/Home'
 import { Search } from '@/pages/Search'
-import { Detail } from '@/pages/Detail'
 import { Player } from '@/pages/Player'
+import { Detail } from '@/pages/Detail'
 import { PlaybackHome } from '@/pages/PlaybackHome'
 import { Library } from '@/pages/Library'
 import { Sites } from '@/pages/Sites'
@@ -20,8 +20,12 @@ import '@/styles/pages.css'
 
 export default function App(): JSX.Element {
   const location = useLocation()
+  const navigationType = useNavigationType()
   const [lastPlayerLocation, setLastPlayerLocation] = useState<ReturnType<typeof useLocation> | null>(null)
   const isPlayerRoute = Boolean(matchPath('/play/:siteKey/:vodId/:lineIndex/:epIndex', location.pathname))
+  const clearCachedPlayer = (location.state as { clearPlayer?: unknown } | null)?.clearPlayer === true
+  const restorePlayerFromTab = location.pathname === '/play' && Boolean(lastPlayerLocation) && !clearCachedPlayer
+  const playerVisible = isPlayerRoute || restorePlayerFromTab
   const playerLocation = isPlayerRoute ? location : lastPlayerLocation
   const ready = useApp((s) => s.ready)
   const init = useApp((s) => s.init)
@@ -36,6 +40,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (isPlayerRoute) setLastPlayerLocation(location)
   }, [isPlayerRoute, location])
+
+  useEffect(() => {
+    if (clearCachedPlayer) setLastPlayerLocation(null)
+  }, [clearCachedPlayer, location.key])
 
   if (!ready) {
     return (
@@ -54,7 +62,7 @@ export default function App(): JSX.Element {
       <div className="app-main">
         <TopBar />
         <main className="app-content">
-          {isPlayerRoute ? null : (
+          {playerVisible ? null : (
               <Routes>
                 <Route path="/" element={noSources ? <FirstRun /> : <HomeRoute />} />
                 <Route path="/play" element={<PlaybackHome />} />
@@ -69,10 +77,10 @@ export default function App(): JSX.Element {
               </Routes>
             )}
           {playerLocation ? (
-            <div className={`player-persistent-host${isPlayerRoute ? ' visible' : ''}`} aria-hidden={!isPlayerRoute}>
+            <div className={`player-persistent-host${playerVisible ? ' visible' : ''}`} aria-hidden={!playerVisible}>
               <Routes location={playerLocation}>
                 <Route path="/play/:siteKey/:vodId/:lineIndex/:epIndex" element={
-                  <Player visible={isPlayerRoute} />
+                  <Player visible={playerVisible} autoPlay={isPlayerRoute && navigationType !== 'POP'} />
                 } />
               </Routes>
             </div>

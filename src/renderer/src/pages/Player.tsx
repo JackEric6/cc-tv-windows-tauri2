@@ -9,7 +9,7 @@ import { DanmakuCanvas } from '@/components/DanmakuCanvas'
 import { DanmakuSettingsPanel } from '@/components/DanmakuSettingsPanel'
 import { Icon } from '@/components/icons'
 import { Switch } from '@/components/Switch'
-import { detailKey, findSourceGroup, useApp } from '@/store/useApp'
+import { detailKey, findSourceGroup, libraryKey, toFavoriteInput, useApp } from '@/store/useApp'
 import { createVideoPlayer, type VideoPlayer } from '@/utils/videojs'
 import { isDirectMedia, isHls, pickPlayableLine } from '@/utils/media'
 import { formatClock } from '@/utils/format'
@@ -77,9 +77,11 @@ function formatMarkerTime(seconds: number): string {
 }
 
 export function Player({
-  visible = true
+  visible = true,
+  autoPlay = visible
 }: {
   visible?: boolean
+  autoPlay?: boolean
 }): JSX.Element {
   const params = useParams()
   const siteKey = params.siteKey ?? ''
@@ -90,22 +92,17 @@ export function Player({
   const location = useLocation()
   const navigate = useNavigate()
   const navigationType = useNavigationType()
-  const routeState = location.state as { originDetail?: unknown; playbackReturnTo?: unknown } | null
+  const routeState = location.state as { playbackReturnTo?: unknown } | null
   const playbackReturnTo = typeof routeState?.playbackReturnTo === 'string' &&
     routeState.playbackReturnTo.startsWith('/') && !routeState.playbackReturnTo.startsWith('//')
     ? routeState.playbackReturnTo
     : null
-  const currentDetailPath = `/detail/${encodeURIComponent(siteKey)}/${encodeURIComponent(vodId)}`
-  const originDetail = typeof routeState?.originDetail === 'string' &&
-    routeState.originDetail.startsWith('/detail/') && !routeState.originDetail.startsWith('//')
-    ? routeState.originDetail
-    : currentDetailPath
   const playerRouteState = useMemo(() => ({
     ...(location.state && typeof location.state === 'object' && !Array.isArray(location.state)
       ? location.state as Record<string, unknown>
       : {}),
-    originDetail
-  }), [location.state, originDetail])
+    ...(playbackReturnTo ? { playbackReturnTo } : {})
+  }), [location.state, playbackReturnTo])
   const navigatePlayerRoute = useCallback((pathname: string, replace = false): void => {
     if (!visible) return
     navigate(pathname, { replace, state: playerRouteState })
@@ -119,6 +116,7 @@ export function Player({
   const sites = useApp((s) => s.sites)
   const details = useApp((s) => s.details)
   const history = useApp((s) => s.history)
+  const favorites = useApp((s) => s.favorites)
   const loadDetail = useApp((s) => s.loadDetail)
   const settings = useApp((s) => s.settings)
   const notify = useApp((s) => s.notify)
@@ -128,6 +126,7 @@ export function Player({
   const searchRunning = useApp((s) => s.search.running)
   const runSearch = useApp((s) => s.runSearch)
   const recordHistory = useApp((s) => s.recordHistory)
+  const toggleFavorite = useApp((s) => s.toggleFavorite)
   const filterCommentary = settings?.filterCommentary ?? true
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -136,15 +135,17 @@ export function Player({
   const pointerInsidePlayer = useRef(false)
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
-  const autoplayRef = useRef(visible)
+  const autoplayRef = useRef(visible && autoPlay)
+  const playerRouteKey = `${siteKey}::${vodId}::${lineIndex}::${epIndex}`
+  const previousPlayerRouteKey = useRef(playerRouteKey)
   visibleRef.current = visible
   const backFromPlayer = useCallback((): void => {
     playerRef.current?.pause()
-    navigate(playbackReturnTo ?? originDetail, {
+    navigate(playbackReturnTo ?? '/play', {
       replace: true,
-      state: playerRouteState
+      state: { ...playerRouteState, clearPlayer: true }
     })
-  }, [navigate, originDetail, playbackReturnTo, playerRouteState])
+  }, [navigate, playbackReturnTo, playerRouteState])
   const previewPlayerRef = useRef<VideoPlayer | null>(null)
   const previewSourceKeyRef = useRef('')
   const previewSeekTargetRef = useRef(0)
@@ -176,6 +177,8 @@ export function Player({
   const [resolving, setResolving] = useState(false)
   /** 这一次是靠哪条路换出的地址，或者为什么没换出来 */
   const [resolveNote, setResolveNote] = useState('')
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false)
   const [danmakuCandidates, setDanmakuCandidates] = useState<DanmakuCandidate[]>([])
   const [danmakuCues, setDanmakuCues] = useState<DanmakuCue[]>([])
   const [selectedDanmaku, setSelectedDanmaku] = useState('')
@@ -267,6 +270,8 @@ export function Player({
   }, [clearFullscreenTimer])
 
   const detail = details[detailKey(siteKey, vodId)]
+  const favorited = favorites.some((favorite) => libraryKey(favorite.siteKey, favorite.vodId) === libraryKey(siteKey, vodId))
+  const description = detail?.vod_content.replace(/(?:&amp;nbsp;|&nbsp;|&#160;|&#x0*a0;|\u00a0)/gi, ' ').trim() ?? ''
   const cachePoster = useMemo(() => detail?.vod_pic || searchResults
     .flatMap((result) => result.list)
     .find((vod) => normalizeName(vod.vod_name) === normalizeName(detail?.vod_name ?? '') && vod.vod_pic)
@@ -481,6 +486,12 @@ export function Player({
       player.on('error', () => {
         setError(translate('视频加载失败，可能是地址已失效、需要 Referer，或者需要解析接口。'))
       })
+      player.one('canplay', () => {
+        if (!visibleRef.current || !autoplayRef.current || !player.paused()) return
+        void Promise.resolve(player.play()).catch(() => {
+          if (alive && visibleRef.current) setHint(translate('自动播放被系统拦截，请点击播放器播放'))
+        })
+      })
       player.on('loadedmetadata', () => {
         const duration = player.duration()
         setPlaybackDuration(typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
@@ -658,29 +669,6 @@ export function Player({
     }
   }, [siteKey, vodId, lineIndex, epIndex, detail?.vod_name, episode?.name, settings?.danmakuEnabled, danmakuRequestId, cancelDanmakuBatches, displayDanmakuProgressively])
 
-  const openExternal = useCallback(async (): Promise<void> => {
-    if (!episode) return
-    try {
-      const resolved = await window.api.player.resolveEpisode(siteKey, episode.url)
-      const result = await window.api.player.open(resolved.sourceUrl, `${detail?.vod_name ?? ''} ${episode.name}`.trim())
-      notify(`已交给外部播放器：${result.player.split(/[\\/]/).pop()}`, 'success')
-    } catch (err) {
-      notify((err as Error).message, 'danger')
-    }
-  }, [episode, siteKey, detail?.vod_name, notify])
-
-  /** 把地址丢给系统默认浏览器 / 下载器 */
-  const openInBrowser = useCallback(async (): Promise<void> => {
-    if (!episode) return
-    try {
-      const resolved = await window.api.player.resolveEpisode(siteKey, episode.url)
-      await window.api.openExternal(resolved.sourceUrl)
-      notify(translate('已用系统默认浏览器打开这个地址'), 'success')
-    } catch (err) {
-      notify((err as Error).message, 'danger')
-    }
-  }, [episode, siteKey, notify])
-
   const cacheSelectedEpisodes = useCallback(async (): Promise<void> => {
     if (!detail || !cacheSelection.length) return
     setCacheBusy(true)
@@ -757,6 +745,8 @@ export function Player({
 
   const wasVisible = useRef(visible)
   useEffect(() => {
+    const routeChanged = previousPlayerRouteKey.current !== playerRouteKey
+    previousPlayerRouteKey.current = playerRouteKey
     const wasPlayerVisible = wasVisible.current
     wasVisible.current = visible
     const player = playerRef.current
@@ -766,14 +756,21 @@ export function Player({
       player?.pause()
       return
     }
+    const shouldAutoplay = autoPlay && navigationType !== 'POP'
+    if (routeChanged) {
+      autoplayRef.current = shouldAutoplay
+      if (shouldAutoplay && player?.paused()) {
+        void Promise.resolve(player.play()).catch(() => undefined)
+      }
+      return
+    }
     if (wasPlayerVisible) return
 
-    const shouldResume = navigationType !== 'POP'
-    autoplayRef.current = shouldResume
-    if (shouldResume && player?.paused()) {
+    autoplayRef.current = shouldAutoplay
+    if (shouldAutoplay && player?.paused()) {
       void Promise.resolve(player.play()).catch(() => undefined)
     }
-  }, [visible, navigationType, restoreHeldPlaybackRate])
+  }, [autoPlay, visible, navigationType, playerRouteKey, restoreHeldPlaybackRate])
 
   const startHeldPlaybackRate = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.pointerType !== 'mouse' || event.button !== 0 || heldPlaybackRateRef.current || !activePlayer) return
@@ -1098,12 +1095,11 @@ export function Player({
         <EmptyState
           icon={<Icon name="screen-off" size={26} />}
           title={translate("找不到这一集")}
-          desc="线路或剧集可能已经变更，回到详情页重新选择。"
+          desc="线路或剧集可能已经变更，请返回后重新选择。"
           actions={
-            <Link
-              className="btn btn-primary"
-              to={`/detail/${encodeURIComponent(siteKey)}/${encodeURIComponent(vodId)}`}
-            >{translate("\n              回到详情页\n            ")}</Link>
+            <button type="button" className="btn btn-primary" onClick={backFromPlayer}>
+              {translate("\n              返回\n            ")}
+            </button>
           }
         />
       </div>
@@ -1319,8 +1315,6 @@ export function Player({
             <span className="grow" />
             <button type="button" className="btn btn-sm" disabled={cacheBusy} onClick={() => { setCacheSelection([]); setShowCachePicker(true) }} title={translate("选择剧集加入离线缓存")}>
               {cacheBusy ? <span className="spin" /> : <Icon name="download" size={13} />}{translate(" 缓存\n            ")}</button>
-            <button type="button" className="btn btn-sm" onClick={() => void openExternal()}>
-              <Icon name="external" size={13} />{translate(" 外部播放器\n            ")}</button>
             <button
               type="button"
               className={`btn btn-sm${showDanmaku ? ' btn-primary' : ''}`}
@@ -1334,16 +1328,49 @@ export function Player({
             <span className="danmaku-status" title={danmakuMessage}>{danmakuMessage}</span>
             <button
               type="button"
-              className="btn btn-sm"
+              className={`btn btn-sm${favorited ? ' btn-primary' : ''}`}
+              disabled={favoriteBusy}
+              title={translate(favorited ? '已收藏' : '收藏')}
               onClick={() => {
-                void navigator.clipboard.writeText(episode.url).then(
-                  () => setHint(translate('地址已复制到剪贴板')),
-                  () => setHint(translate('复制失败，可以手动选中下面的地址'))
-                )
+                setFavoriteBusy(true)
+                void toggleFavorite(toFavoriteInput(detail))
+                  .catch((err: Error) => notify(`收藏操作失败：${err.message}`, 'danger'))
+                  .finally(() => setFavoriteBusy(false))
               }}
             >
-              <Icon name="link" size={13} />{translate(" 复制地址\n            ")}</button>
+              <Icon name="star" size={14} />{translate(favorited ? '已收藏' : '收藏')}
+            </button>
           </div>
+
+          <section className="player-detail-info" aria-label={translate('影片信息')}>
+            <div className="player-detail-heading">
+                <h2>{detail.vod_name}</h2>
+                <div className="player-detail-meta">
+                  {detail.vod_score && Number(detail.vod_score) > 0 ? (
+                    <span className="player-detail-score">{Number(detail.vod_score).toFixed(1)}</span>
+                  ) : null}
+                  {[detail.vod_year, detail.vod_area, detail.type_name, detail.vod_remarks].filter(Boolean).map((value, index) => (
+                    <span className="tag tag-outline" key={`${index}-${value}`}>{value}</span>
+                  ))}
+                </div>
+            </div>
+            {detail.vod_director ? (
+              <div className="player-detail-crew"><span>{translate('导演')}</span>{detail.vod_director}</div>
+            ) : null}
+            {detail.vod_actor ? (
+              <div className="player-detail-crew"><span>{translate('主演')}</span>{detail.vod_actor}</div>
+            ) : null}
+            {description ? (
+              <div className={`player-detail-description${descriptionExpanded ? ' open' : ''}`}>
+                {description}
+                {description.length > 150 ? (
+                  <button type="button" onClick={() => setDescriptionExpanded((value) => !value)}>
+                    {translate(descriptionExpanded ? '收起' : '展开')}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
 
           {showDanmakuSettings && settings ? createPortal(
             <div className="danmaku-settings-backdrop" onMouseDown={(event) => {
@@ -1462,8 +1489,7 @@ export function Player({
                   setDanmakuCues([])
                   setDanmakuMessage(translate('正在加载弹幕…'))
                   try {
-                    const candidate = danmakuCandidates.find((item) => item.id === id)
-                    const cues = await window.api.danmaku.load(id, danmakuRequestId, candidate?.cacheKey)
+                    const cues = await window.api.danmaku.load(id, danmakuRequestId)
                     if (danmakuSequence.current !== sequence) return
                     if (!cues.length) {
                       setDanmakuMessage(translate('该匹配项暂无弹幕'))
@@ -1494,17 +1520,6 @@ export function Player({
           ) : null}
 
           {hint ? <div className="banner banner-info">{hint}</div> : null}
-
-          <button
-            type="button"
-            className="player-url mono"
-            title={`点击用系统默认浏览器打开：\n${episode.url}`}
-            onClick={() => void openInBrowser()}
-          >
-            <span className="player-url-text">{episode.url}</span>
-            <span className="player-url-go">
-              <Icon name="external" size={12} />{translate("\n              浏览器打开\n            ")}</span>
-          </button>
 
           {/* key 带上集号：换集时直接重建组件，总结结果不会串到下一集 */}
           <AiSummary

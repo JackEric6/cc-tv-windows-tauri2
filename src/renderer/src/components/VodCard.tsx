@@ -46,7 +46,7 @@ export function VodCard({
           <Link
             key={`${source.siteKey}-${source.vod_id}`}
             className="tag tag-outline vod-card-source"
-            title={`打开「${source.siteName}」详情`}
+            title={`查看「${source.siteName}」来源`}
             to={`/detail/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}`}
             state={{ returnTo }}
           >

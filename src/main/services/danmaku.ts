@@ -487,8 +487,8 @@ export async function loadDanmaku(id: string, requestId = 'default', sharedKey =
   if (!id.trim()) return []
   const request = beginRequest(requestId)
   try {
-    const cached = (sharedKey ? readDanmakuCache(`episode:${sharedKey}`) : undefined)
-      ?? readDanmakuCache(`id:${id}`)
+    const cached = readDanmakuCache(`id:${id}`)
+      ?? (sharedKey ? readDanmakuCache(`episode:${sharedKey}`) : undefined)
     if (cached) return cached
     const isBilibili = id.startsWith('bili:')
     const payload = isBilibili ? null : object(await getJson(

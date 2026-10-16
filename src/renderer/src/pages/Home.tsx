@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import type { HomeSection } from '@shared/types'
-import { Poster } from '@/components/Poster'
 import { VodCard } from '@/components/VodCard'
 import { useApp } from '@/store/useApp'
-import { relativeTime, watchPercent } from '@/utils/format'
 import { Icon } from '@/components/icons'
 import { translate } from '@/i18n'
 
@@ -12,15 +10,13 @@ export function Home(): JSX.Element {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [expandedContent, setExpandedContent] = useState<Record<string, HomeSection>>({})
   const [expandingSections, setExpandingSections] = useState<Record<string, boolean>>({})
-  const history = useApp((s) => s.history)
   const home = useApp((s) => s.home)
   const homeLoading = useApp((s) => s.homeLoading)
   const homeLoaded = useApp((s) => s.homeLoaded)
   const loadHome = useApp((s) => s.loadHome)
   const notify = useApp((s) => s.notify)
 
-  // 内容位要等站点列表就绪，所以不放进 init() 跟首屏一起等：
-  // 先把「继续观看」画出来，内容位在后台拉，回来了再补上。
+  // 内容位要等站点列表就绪，所以不放进 init() 跟首屏一起等。
   useEffect(() => {
     if (!homeLoaded && !homeLoading) void loadHome()
   }, [homeLoaded, homeLoading, loadHome])
@@ -46,50 +42,6 @@ export function Home(): JSX.Element {
 
   return (
     <div className="page page-home">
-      {history.length ? (
-        <div className="section home-continue">
-          <div className="section-head">
-            <div className="section-title">{translate("继续观看")}</div>
-            <div className="section-more">
-              <NavLink to="/library?tab=history">{translate("全部记录 →")}</NavLink>
-            </div>
-          </div>
-          <div className="continue-row">
-            {history.slice(0, 6).map((group) => {
-              const item = group.items[0]
-              const pct = watchPercent(item)
-              const to = item.offlineTaskId
-                ? `/offline/${item.offlineTaskId}`
-                : `/play/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}/${item.lineIndex}/${item.epIndex}`
-              return (
-                <Link className="continue-card" key={group.key} to={to} state={{ playbackReturnTo: '/' }}>
-                  <div className="continue-poster">
-                    <Poster src={item.pic ?? group.pic} name={group.name} />
-                    <span className="continue-play">
-                      <Icon name="play" size={16} />
-                    </span>
-                  </div>
-                  <div className="continue-body">
-                    <div className="continue-title truncate" title={group.name}>
-                      {group.name}
-                    </div>
-                    <div className="continue-sub truncate">
-                      {item.epName || `第 ${item.epIndex + 1} 集`} · {relativeTime(item.updatedAt)}
-                      {group.items.length > 1 ? ` · ${group.items.length} 个源` : ''}
-                    </div>
-                    {pct !== null ? (
-                      <div className="continue-bar" title={`已看 ${pct}%`}>
-                        <span style={{ width: `${pct}%` }} />
-                      </div>
-                    ) : null}
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-      ) : null}
-
       {home.length
         ? <div className="home-sections">{home.map((section) => {
             const displaySection = expandedContent[section.key] ?? section
