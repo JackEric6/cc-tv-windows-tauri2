@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom'
 import type { AppSettings, DanmakuCandidate, DanmakuCue } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { AiSummary } from '@/components/AiSummary'
@@ -77,11 +77,9 @@ function formatMarkerTime(seconds: number): string {
 }
 
 export function Player({
-  visible = true,
-  onBackgroundNavigate
+  visible = true
 }: {
   visible?: boolean
-  onBackgroundNavigate?: (pathname: string, state: unknown) => void
 }): JSX.Element {
   const params = useParams()
   const siteKey = params.siteKey ?? ''
@@ -91,7 +89,12 @@ export function Player({
 
   const location = useLocation()
   const navigate = useNavigate()
-  const routeState = location.state as { originDetail?: unknown } | null
+  const navigationType = useNavigationType()
+  const routeState = location.state as { originDetail?: unknown; playbackReturnTo?: unknown } | null
+  const playbackReturnTo = typeof routeState?.playbackReturnTo === 'string' &&
+    routeState.playbackReturnTo.startsWith('/') && !routeState.playbackReturnTo.startsWith('//')
+    ? routeState.playbackReturnTo
+    : null
   const currentDetailPath = `/detail/${encodeURIComponent(siteKey)}/${encodeURIComponent(vodId)}`
   const originDetail = typeof routeState?.originDetail === 'string' &&
     routeState.originDetail.startsWith('/detail/') && !routeState.originDetail.startsWith('//')
@@ -104,12 +107,9 @@ export function Player({
     originDetail
   }), [location.state, originDetail])
   const navigatePlayerRoute = useCallback((pathname: string, replace = false): void => {
-    if (visible) {
-      navigate(pathname, { replace, state: playerRouteState })
-    } else {
-      onBackgroundNavigate?.(pathname, playerRouteState)
-    }
-  }, [navigate, onBackgroundNavigate, playerRouteState, visible])
+    if (!visible) return
+    navigate(pathname, { replace, state: playerRouteState })
+  }, [navigate, playerRouteState, visible])
   const navigateToEpisode = useCallback((index: number): void => {
     navigatePlayerRoute(`/play/${encodeURIComponent(siteKey)}/${encodeURIComponent(vodId)}/${lineIndex}/${index}`)
   }, [navigatePlayerRoute, siteKey, vodId, lineIndex])
@@ -135,13 +135,16 @@ export function Player({
   const progressPreviewContainerRef = useRef<HTMLDivElement>(null)
   const pointerInsidePlayer = useRef(false)
   const playerRef = useRef<VideoPlayer | null>(null)
+  const visibleRef = useRef(visible)
+  const autoplayRef = useRef(visible)
+  visibleRef.current = visible
   const backFromPlayer = useCallback((): void => {
     playerRef.current?.pause()
-    navigate(originDetail, {
+    navigate(playbackReturnTo ?? originDetail, {
       replace: true,
       state: playerRouteState
     })
-  }, [navigate, originDetail, playerRouteState])
+  }, [navigate, originDetail, playbackReturnTo, playerRouteState])
   const previewPlayerRef = useRef<VideoPlayer | null>(null)
   const previewSourceKeyRef = useRef('')
   const previewSeekTargetRef = useRef(0)
@@ -469,6 +472,7 @@ export function Player({
         url,
         accent: settings?.accent,
         hls,
+        autoplay: visibleRef.current && autoplayRef.current,
         toggleFullscreen: () => { void toggleFullscreen() }
       })
       playerBox.current = player
@@ -547,7 +551,7 @@ export function Player({
             ? currentTime >= outroAt
             : autoSwitchSeconds > 0 && typeof duration === 'number' && Number.isFinite(duration) &&
               duration - currentTime <= autoSwitchSeconds)
-        if (!outroTriggered.current && nextEpisodeRef.current >= 0 &&
+        if (visibleRef.current && !outroTriggered.current && nextEpisodeRef.current >= 0 &&
           typeof duration === 'number' && Number.isFinite(duration) && duration > 0 &&
           outroReached) {
           outroTriggered.current = true
@@ -734,7 +738,7 @@ export function Player({
     else activePlayer.pause()
   }, [activePlayer])
 
-  const restoreHeldPlaybackRate = useCallback((): void => {
+  const restoreHeldPlaybackRate = useCallback((resumePlayback = true): void => {
     const held = heldPlaybackRateRef.current
     if (!held) return
     heldPlaybackRateRef.current = null
@@ -746,10 +750,30 @@ export function Player({
     if (held.player.isDisposed()) return
     held.player.playbackRate(held.rate)
     if (held.player === playerRef.current) setPlaybackRate(held.rate)
-    if ((held.wasPlaying || held.activated) && held.player.paused()) {
+    if (resumePlayback && (held.wasPlaying || held.activated) && held.player.paused()) {
       void Promise.resolve(held.player.play()).catch(() => undefined)
     }
   }, [])
+
+  const wasVisible = useRef(visible)
+  useEffect(() => {
+    const wasPlayerVisible = wasVisible.current
+    wasVisible.current = visible
+    const player = playerRef.current
+    if (!visible) {
+      autoplayRef.current = false
+      restoreHeldPlaybackRate(false)
+      player?.pause()
+      return
+    }
+    if (wasPlayerVisible) return
+
+    const shouldResume = navigationType !== 'POP'
+    autoplayRef.current = shouldResume
+    if (shouldResume && player?.paused()) {
+      void Promise.resolve(player.play()).catch(() => undefined)
+    }
+  }, [visible, navigationType, restoreHeldPlaybackRate])
 
   const startHeldPlaybackRate = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.pointerType !== 'mouse' || event.button !== 0 || heldPlaybackRateRef.current || !activePlayer) return

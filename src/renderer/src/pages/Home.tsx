@@ -62,7 +62,7 @@ export function Home(): JSX.Element {
                 ? `/offline/${item.offlineTaskId}`
                 : `/play/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}/${item.lineIndex}/${item.epIndex}`
               return (
-                <Link className="continue-card" key={group.key} to={to}>
+                <Link className="continue-card" key={group.key} to={to} state={{ playbackReturnTo: '/' }}>
                   <div className="continue-poster">
                     <Poster src={item.pic ?? group.pic} name={group.name} />
                     <span className="continue-play">

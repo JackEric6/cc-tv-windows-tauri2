@@ -27,7 +27,7 @@ export function PlaybackHome(): JSX.Element {
                 : `/play/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}/${item.lineIndex}/${item.epIndex}`
               const percent = watchPercent(item)
               return (
-                <Link className="continue-card" key={group.key} to={to}>
+                <Link className="continue-card" key={group.key} to={to} state={{ playbackReturnTo: '/play' }}>
                   <div className="continue-poster">
                     <Poster src={item.pic ?? group.pic} name={group.name} />
                     <span className="continue-play"><Icon name="play" size={16} /></span>

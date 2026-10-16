@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { matchPath, NavLink, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
@@ -22,16 +22,11 @@ export default function App(): JSX.Element {
   const location = useLocation()
   const [lastPlayerLocation, setLastPlayerLocation] = useState<ReturnType<typeof useLocation> | null>(null)
   const isPlayerRoute = Boolean(matchPath('/play/:siteKey/:vodId/:lineIndex/:epIndex', location.pathname))
-  const isPlaybackPage = location.pathname === '/play' || isPlayerRoute
   const playerLocation = isPlayerRoute ? location : lastPlayerLocation
   const ready = useApp((s) => s.ready)
   const init = useApp((s) => s.init)
   const sources = useApp((s) => s.sources)
   const language = useApp((s) => s.settings?.language ?? 'zh-CN')
-  const updateBackgroundPlayerRoute = useCallback((pathname: string, state: unknown): void => {
-    setLastPlayerLocation({ pathname, search: '', hash: '', state, key: `player-${Date.now()}` })
-  }, [])
-
   setUiLanguage(language)
 
   useEffect(() => {
@@ -59,11 +54,10 @@ export default function App(): JSX.Element {
       <div className="app-main">
         <TopBar />
         <main className="app-content">
-          {isPlaybackPage
-            ? playerLocation ? null : <PlaybackHome />
-            : (
+          {isPlayerRoute ? null : (
               <Routes>
                 <Route path="/" element={noSources ? <FirstRun /> : <HomeRoute />} />
+                <Route path="/play" element={<PlaybackHome />} />
                 <Route path="/search" element={<Search />} />
                 <Route path="/detail/:siteKey/:vodId" element={<Detail />} />
                 <Route path="/library" element={<Library />} />
@@ -75,10 +69,10 @@ export default function App(): JSX.Element {
               </Routes>
             )}
           {playerLocation ? (
-            <div className={`player-persistent-host${isPlaybackPage ? ' visible' : ''}`} aria-hidden={!isPlaybackPage}>
+            <div className={`player-persistent-host${isPlayerRoute ? ' visible' : ''}`} aria-hidden={!isPlayerRoute}>
               <Routes location={playerLocation}>
                 <Route path="/play/:siteKey/:vodId/:lineIndex/:epIndex" element={
-                  <Player visible={isPlaybackPage} onBackgroundNavigate={updateBackgroundPlayerRoute} />
+                  <Player visible={isPlayerRoute} />
                 } />
               </Routes>
             </div>

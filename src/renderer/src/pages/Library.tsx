@@ -108,7 +108,11 @@ export function Library(): JSX.Element {
             : `/play/${encodeURIComponent(item.siteKey)}/${encodeURIComponent(item.vodId)}/${item.lineIndex}/${item.epIndex}`
           return (
             <div className="history-row" key={group.key}>
-              <Link className="history-poster" to={playTo}>
+              <Link
+                className="history-poster"
+                to={playTo}
+                state={item.offlineTaskId ? undefined : { playbackReturnTo: '/library?tab=history' }}
+              >
                 <Poster src={item.pic ?? group.pic} name={group.name} />
               </Link>
               <div className="history-main">
@@ -154,7 +158,11 @@ export function Library(): JSX.Element {
                 ) : null}
               </div>
               <div className="history-actions">
-                <Link className="btn btn-sm btn-primary" to={playTo}>
+                <Link
+                  className="btn btn-sm btn-primary"
+                  to={playTo}
+                  state={item.offlineTaskId ? undefined : { playbackReturnTo: '/library?tab=history' }}
+                >
                   <Icon name="play" size={13} />{translate("\n                  继续观看\n                ")}</Link>
                 <button
                   type="button"
