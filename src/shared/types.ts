@@ -281,6 +281,8 @@ export interface AppSettings {
   language: 'zh-CN' | 'en-US'
   /** 单请求超时秒数 */
   timeout: number
+  /** 聚合搜索单个站点的截止秒数 */
+  singleSourceTimeoutSeconds: number
   /** 使用 Windows 当前配置的系统代理 */
   useSystemProxy: boolean
   userAgent: string

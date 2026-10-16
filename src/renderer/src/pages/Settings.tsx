@@ -852,7 +852,19 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: Genera
               value={draft.timeout}
               onChange={(e) => setDraft({ ...draft, timeout: clampInt(e.target.value, 3, 120, 3) })}
             />
-            <div className="field-hint">{translate("普通接口与详情请求的等待时间；聚合搜索每个源固定等待 1 秒")}</div>
+            <div className="field-hint">{translate("普通接口与详情请求的等待时间；聚合搜索单源截止时间单独设置")}</div>
+          </div>
+          <div className="field">
+            <label>{translate("单源请求截止（秒）")}</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={10}
+              value={draft.singleSourceTimeoutSeconds}
+              onChange={(e) => setDraft({ ...draft, singleSourceTimeoutSeconds: clampInt(e.target.value, 1, 10, 2) })}
+            />
+            <div className="field-hint">{translate("达到时限后跳过该站点，其他站点继续返回结果（1–10 秒）")}</div>
           </div>
           <div className="field">
             <label>{translate("界面密度")}</label>

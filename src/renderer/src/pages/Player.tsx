@@ -477,6 +477,7 @@ export function Player({
         accent: settings?.accent,
         hls,
         autoplay: visibleRef.current && autoplayRef.current,
+        bigPlayButton: false,
         toggleFullscreen: () => { void toggleFullscreen() }
       })
       playerBox.current = player

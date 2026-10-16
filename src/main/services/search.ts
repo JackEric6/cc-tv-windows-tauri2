@@ -11,8 +11,6 @@ import { isNativeAdaptedSite, searchNativeSite } from './nativeSites'
 const DEFAULT_LIMIT = 30
 const SEARCH_CACHE_TTL_MS = 60_000
 const SEARCH_CACHE_LIMIT = 120
-const SEARCH_SITE_TIMEOUT_SECONDS = 1
-const SEARCH_SITE_TIMEOUT_MS = SEARCH_SITE_TIMEOUT_SECONDS * 1000
 
 interface SearchCacheEntry {
   createdAt: number
@@ -98,14 +96,16 @@ function searchSiteCached(
 function withSiteSearchDeadline(
   site: Site,
   promise: Promise<SiteSearchResult>,
-  controller: AbortController
+  controller: AbortController,
+  timeoutSeconds: number
 ): Promise<SiteSearchResult> {
+  const deadlineMs = timeoutSeconds * 1000
   let timer: NodeJS.Timeout | undefined
   const timedOut = new Promise<SiteSearchResult>((resolve) => {
     timer = setTimeout(() => {
-      resolve(fail(site, '搜索超过 1 秒，已跳过该站点', SEARCH_SITE_TIMEOUT_MS))
+      resolve(fail(site, `搜索超过 ${timeoutSeconds} 秒，已跳过该站点`, deadlineMs))
       controller.abort()
-    }, SEARCH_SITE_TIMEOUT_MS)
+    }, deadlineMs)
   })
   return Promise.race([promise, timedOut]).finally(() => {
     if (timer) clearTimeout(timer)
@@ -313,9 +313,9 @@ export async function searchAll(
   const results: Array<SiteSearchResult | undefined> = Array(targets.length)
   const pendingIndexes: number[] = []
   let done = 0
+  const timeout = settings.singleSourceTimeoutSeconds
   for (let index = 0; index < targets.length; index++) {
     const site = targets[index]
-    const timeout = SEARCH_SITE_TIMEOUT_SECONDS
     const cached = readSearchCache(searchCacheKey(site, keyword, limit, timeout))
     if (!cached) {
       pendingIndexes.push(index)
@@ -335,7 +335,6 @@ export async function searchAll(
       if (pendingIndex >= pendingIndexes.length) return
       const index = pendingIndexes[pendingIndex]
       const site = targets[index]
-      const timeout = SEARCH_SITE_TIMEOUT_SECONDS
       const controller = new AbortController()
       activeSearchControllers.add(controller)
       let result: SiteSearchResult
@@ -343,7 +342,8 @@ export async function searchAll(
         result = await withSiteSearchDeadline(
           site,
           searchSiteCached(site, keyword, limit, timeout, controller.signal, token),
-          controller
+          controller,
+          timeout
         )
       } finally {
         activeSearchControllers.delete(controller)

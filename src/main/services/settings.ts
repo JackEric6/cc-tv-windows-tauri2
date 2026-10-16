@@ -5,10 +5,11 @@ import { readStore, writeStore } from './store'
 const NAME = 'settings'
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  settingsVersion: 3,
+  settingsVersion: 4,
   concurrency: 10,
   language: 'zh-CN',
   timeout: 3,
+  singleSourceTimeoutSeconds: 2,
   useSystemProxy: false,
   userAgent: DEFAULT_UA,
   theme: 'light',
@@ -39,14 +40,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export async function getSettings(): Promise<AppSettings> {
   const stored = await readStore<Partial<AppSettings>>(NAME, {})
   const storedVersion = stored.settingsVersion ?? 0
-  const needsMigration = storedVersion < 3
+  const needsMigration = storedVersion < 4
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...stored,
-    settingsVersion: 3,
+    settingsVersion: 4,
     concurrency: storedVersion < 3 && stored.concurrency === 8 ? 10 : stored.concurrency ?? DEFAULT_SETTINGS.concurrency,
     language: stored.language === 'en-US' ? 'en-US' : 'zh-CN',
     timeout: storedVersion < 1 && stored.timeout === 20 ? 3 : stored.timeout ?? DEFAULT_SETTINGS.timeout,
+    singleSourceTimeoutSeconds: Number.isFinite(stored.singleSourceTimeoutSeconds)
+      ? Math.max(1, Math.min(10, Math.trunc(stored.singleSourceTimeoutSeconds ?? DEFAULT_SETTINGS.singleSourceTimeoutSeconds)))
+      : DEFAULT_SETTINGS.singleSourceTimeoutSeconds,
     filterAdult: true,
     externalPlayer: { ...DEFAULT_SETTINGS.externalPlayer, ...(stored.externalPlayer ?? {}) },
     window: { ...DEFAULT_SETTINGS.window, ...(stored.window ?? {}) },

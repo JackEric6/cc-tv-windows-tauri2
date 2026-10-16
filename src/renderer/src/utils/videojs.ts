@@ -9,6 +9,7 @@ export interface VideoOptions {
   poster?: string
   hls?: boolean
   autoplay?: boolean
+  bigPlayButton?: boolean
   toggleFullscreen?: () => void
   preview?: boolean
 }
@@ -25,6 +26,7 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
   const player = videojs(video, {
     controls: !options.preview,
     autoplay: options.autoplay ?? !options.preview,
+    bigPlayButton: options.bigPlayButton ?? !options.preview,
     muted: Boolean(options.preview),
     preload: 'auto',
     responsive: true,
