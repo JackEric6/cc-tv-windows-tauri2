@@ -276,7 +276,7 @@ export function Settings(): JSX.Element {
       <section className="section">
         <div className="section-head">
           <div className="section-title">{translate("开发里程碑")}</div>
-          <div className="section-more">{translate("详见项目根目录「功能框架.txt」")}</div>
+          <div className="section-more">{translate("历史框架文档：docs/legacy/功能框架.txt")}</div>
         </div>
         <div className="milestones">
           <div className="milestone done">
@@ -491,7 +491,7 @@ export function Settings(): JSX.Element {
         {settingsTab === 'sources' ? <section className="section">
           <div className="section-head">
             <div className="section-title">{translate("配置格式")}</div>
-            <div className="section-more">{translate("完整规范见项目根目录「功能框架.txt」第 5 章")}</div>
+            <div className="section-more">{translate("历史配置格式说明见 docs/legacy/功能框架.txt 第 5 章")}</div>
           </div>
           <div className="panel">
             <div className="code-block">{JSON_SAMPLE}</div>

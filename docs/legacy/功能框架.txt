@@ -2,11 +2,12 @@
                     TVBox Desktop · 功能框架设计书
         Windows 桌面影视聚合客户端 | 纯白极简 · 电脑宽屏 · 内容密集
 ================================================================================
+归档说明 : 本文描述早期 Electron 方案；当前项目已迁移至 Tauri 2，本文中的目录、依赖与打包方式均为历史信息。
 文档版本 : v0.1
 目标平台 : Windows 10 / 11 (x64)
 技术形态 : Electron 桌面客户端
 编写日期 : 首版框架设计
-配套代码 : D:\tvbox
+配套代码 : 早期项目目录
 
 
 ================================================================================
@@ -49,7 +50,7 @@ D:\tvbox
 ├─ package.json
 ├─ electron.vite.config.ts
 ├─ tsconfig.json / tsconfig.node.json / tsconfig.web.json
-├─ 功能框架.txt                      ← 本文档
+├─ docs/legacy/功能框架.txt          ← 本文档（历史方案）
 ├─ resources/                        应用图标等静态资源
 └─ src/
    ├─ shared/                        主进程与渲染进程共用的类型定义
@@ -1610,7 +1611,7 @@ M3 之后按用户反馈追加的三件事（都已完成）：
              library / sites / settings / settings-ai / search / detail / player）
   数据目录   data/（程序同级；settings.json、sources.json、sites.json、
              presets/ 内置订阅落盘、session/ Chromium 缓存）
-  文档       README.md（怎么跑）、功能框架.txt（本文件）
+  文档       README.md（怎么跑）、docs/legacy/功能框架.txt（本文件）
 
   npm run dev           启动开发窗口，渲染进程热更新
   npm run dev:debug     同上，额外打开 CDP 调试端口 9222
