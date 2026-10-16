@@ -290,8 +290,8 @@ export interface AppSettings {
   accent: string
   density: 'comfortable' | 'compact'
   sidebarCollapsed: boolean
-  /** 首页优先使用的影视源；加载失败时会按瓜子、西瓜、荐片顺序回退 */
-  homeSourceKey: 'guazi' | 'xgzy' | 'jianpian'
+  /** 首页片单来源；四个采集源会按瓜子推荐片名替换条目 */
+  homeSourceKey: 'guazi' | 'xgzy' | 'jianpian' | 'dyttzy' | 'ffzy' | 'lzi' | 'bfzy'
   /** 搜索结果里隐藏「解说 / 速看 / 混剪」这类二创内容 */
   filterCommentary: boolean
   /** 搜索与分类结果中过滤成人及伦理片内容 */

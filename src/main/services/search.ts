@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio'
 import type { SearchOptions, SearchResponse, Site, SiteSearchResult, Vod } from '@shared/types'
+import { normalizeSearchTitle } from '@shared/searchMatch'
 import { asArray, buildCmsUrl, cmsApiCandidates, cmsRefererForApi, isCmsOk } from './cms'
 import { fetchText, parseLooseJson } from './http'
 import { absolutize, extract } from './htmlRules'
@@ -158,10 +159,17 @@ export function cmsItemToVod(raw: Record<string, unknown>, site: Site): Vod {
   }
 }
 
-async function searchCms(site: Site, wd: string, limit: number, timeout: number, signal?: AbortSignal): Promise<Vod[]> {
+async function searchCms(
+  site: Site,
+  wd: string,
+  limit: number,
+  timeout: number,
+  signal?: AbortSignal,
+  primaryOnly = false
+): Promise<Vod[]> {
   let lastError: Error | undefined
   let emptyResult: Vod[] = []
-  for (const candidate of cmsApiCandidates(site)) {
+  for (const candidate of primaryOnly ? [site] : cmsApiCandidates(site)) {
     try {
       // 搜索用 ac=detail：MacCMS V10 的 detail 同时支持 wd 关键词，且一次就带回
       // vod_play_url，省掉一次详情请求。只有配置作者在模板里写了 {ac} 时，才按
@@ -190,6 +198,30 @@ async function searchCms(site: Site, wd: string, limit: number, timeout: number,
   if (lastError && emptyResult.length) throw lastError
   if (lastError && !lastError.message.includes('没有搜索结果')) throw lastError
   return emptyResult
+}
+
+/** 首页按瓜子片名在指定 CMS 源中找同名条目，不受聚合搜索开关影响。 */
+export async function searchCmsExactTitle(
+  site: Site,
+  title: string,
+  timeoutSeconds: number,
+  parentSignal?: AbortSignal
+): Promise<Vod | undefined> {
+  const wanted = normalizeSearchTitle(title)
+  if (!wanted) return undefined
+
+  const controller = new AbortController()
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, controller.signal])
+    : controller.signal
+  const timeout = Math.max(1, timeoutSeconds) * 1000
+  const timer = setTimeout(() => controller.abort(), timeout)
+  try {
+    const results = await searchCms(site, title, 100, Math.max(1, timeoutSeconds), signal, true)
+    return results.find((item) => normalizeSearchTitle(item.vod_name) === wanted)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function searchHtml(site: Site, wd: string, limit: number, timeout: number, signal?: AbortSignal): Promise<Vod[]> {

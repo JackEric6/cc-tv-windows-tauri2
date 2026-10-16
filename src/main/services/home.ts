@@ -1,7 +1,8 @@
-import type { HomeSection, Site } from '@shared/types'
+import type { HomeSection, Site, Vod } from '@shared/types'
+import { normalizeSearchTitle } from '@shared/searchMatch'
 import { asArray, buildCmsBrowseUrl, buildCmsUrl, isCmsOk } from './cms'
 import { fetchText, parseLooseJson } from './http'
-import { cmsItemToVod } from './search'
+import { cmsItemToVod, searchCmsExactTitle } from './search'
 import { listCongcongSourceHome, listJianpianHome } from './congcongSources'
 import { getSettings } from './settings'
 import { getSites, resolveHeader } from './sites'
@@ -27,6 +28,21 @@ const XIGUA_CHILDREN: Record<string, string[]> = {
 }
 const XIGUA_CHILD_TIMEOUT = 7
 const XIGUA_PAGE_SIZE = 20
+const GUAZI_REPLACEMENT_SOURCES = new Set(['dyttzy', 'ffzy', 'lzi', 'bfzy'])
+const HOME_MATCH_CONCURRENCY = 12
+const HOME_MATCH_CACHE_TTL = 10 * 60 * 1000
+const HOME_MATCH_MISS_TTL = 2 * 60 * 1000
+const HOME_MATCH_CACHE_LIMIT = 600
+
+interface HomeMatchCacheEntry {
+  createdAt: number
+  value: Vod | null
+}
+
+const homeMatchCache = new Map<string, HomeMatchCacheEntry>()
+const homeMatchInFlight = new Map<string, Promise<Vod | undefined>>()
+const homeMatchWaiters: Array<() => void> = []
+let activeHomeMatches = 0
 
 interface Plan {
   key: string
@@ -38,6 +54,76 @@ interface Plan {
   childTypeIds?: string[]
   pid?: string
   query?: string
+}
+
+async function withHomeMatchSlot<T>(work: () => Promise<T>): Promise<T> {
+  await new Promise<void>((resolve) => {
+    const start = (): void => {
+      activeHomeMatches++
+      resolve()
+    }
+    if (activeHomeMatches < HOME_MATCH_CONCURRENCY) start()
+    else homeMatchWaiters.push(start)
+  })
+
+  try {
+    return await work()
+  } finally {
+    activeHomeMatches--
+    homeMatchWaiters.shift()?.()
+  }
+}
+
+async function findReplacementItem(site: Site, item: Vod, timeoutSeconds: number): Promise<Vod | undefined> {
+  const title = normalizeSearchTitle(item.vod_name)
+  if (!title) return undefined
+  const key = `${site.key}|${site.sourceId}|${site.api}|${title}`
+  const cached = homeMatchCache.get(key)
+  if (cached) {
+    const ttl = cached.value ? HOME_MATCH_CACHE_TTL : HOME_MATCH_MISS_TTL
+    if (Date.now() - cached.createdAt < ttl) {
+      homeMatchCache.delete(key)
+      homeMatchCache.set(key, cached)
+      return cached.value ? { ...cached.value } : undefined
+    }
+    homeMatchCache.delete(key)
+  }
+
+  const inFlight = homeMatchInFlight.get(key)
+  if (inFlight) return inFlight.then((match) => match ? { ...match } : undefined)
+
+  const request = withHomeMatchSlot(() => searchCmsExactTitle(site, item.vod_name, timeoutSeconds))
+    .then((result) => {
+      const match = result && normalizeSearchTitle(result.vod_name) === title ? result : undefined
+      homeMatchCache.set(key, { createdAt: Date.now(), value: match ?? null })
+      while (homeMatchCache.size > HOME_MATCH_CACHE_LIMIT) {
+        const oldest = homeMatchCache.keys().next().value
+        if (!oldest) break
+        homeMatchCache.delete(oldest)
+      }
+      return match ? { ...match } : undefined
+    })
+    .catch(() => undefined)
+    .finally(() => homeMatchInFlight.delete(key))
+  homeMatchInFlight.set(key, request)
+  return request.then((match) => match ? { ...match } : undefined)
+}
+
+async function replaceGuaziItems(
+  site: Site,
+  items: Vod[],
+  timeoutSeconds: number
+): Promise<Vod[]> {
+  const replacements = await Promise.all(items.map((item) => findReplacementItem(site, item, timeoutSeconds)))
+  return replacements.filter((item): item is Vod => Boolean(item))
+}
+
+function fallbackHomeKeys(homeSourceKey: string): string[] {
+  if (homeSourceKey === 'guazi' || GUAZI_REPLACEMENT_SOURCES.has(homeSourceKey)) {
+    return ['xgzy', 'dyttzy', 'ffzy', 'lzi', 'bfzy']
+  }
+  if (homeSourceKey === 'xgzy') return ['jianpian']
+  return ['guazi', 'xgzy']
 }
 
 /**
@@ -124,11 +210,23 @@ async function defaultPlansFor(key: string, sites: Site[]): Promise<Plan[]> {
   return [{ key: `${key}::latest`, title: `${site.name} · 最近更新`, origin: 'default', site }]
 }
 
-async function buildPlan(): Promise<{ plans: Plan[]; missing: HomeSection[]; sites: Site[]; homeSourceKey: string }> {
+async function buildPlan(): Promise<{
+  plans: Plan[]
+  missing: HomeSection[]
+  sites: Site[]
+  homeSourceKey: string
+  replacementSourceKey?: string
+  replacementSite?: Site
+  matchTimeout: number
+}> {
   const sites = (await getSites()).filter((s) => s.enabled)
   const sources = await listSources()
   const settings = await getSettings()
   const homeSourceKey = settings.homeSourceKey || 'guazi'
+  const replacementSourceKey = GUAZI_REPLACEMENT_SOURCES.has(homeSourceKey) ? homeSourceKey : undefined
+  const replacementSite = replacementSourceKey
+    ? sites.find((site) => site.key === replacementSourceKey && isHomeSource(site))
+    : undefined
   const plans: Plan[] = []
   const missing: HomeSection[] = []
   const seen = new Set<string>()
@@ -193,25 +291,32 @@ async function buildPlan(): Promise<{ plans: Plan[]; missing: HomeSection[]; sit
     }
   }
 
-  const selectedPlans = plans.filter((plan) => plan.site.key === homeSourceKey)
-  let preferredPlans = selectedPlans.length ? selectedPlans : await defaultPlansFor(homeSourceKey, sites)
-  if (!preferredPlans.length) {
-    const fallbackKeys = homeSourceKey === 'guazi' ? ['xgzy', 'jianpian']
-      : homeSourceKey === 'xgzy' ? ['jianpian'] : ['guazi', 'xgzy']
-    for (const key of fallbackKeys) {
+  const primarySourceKey = replacementSourceKey ? 'guazi' : homeSourceKey
+  const selectedPlans = plans.filter((plan) => plan.site.key === primarySourceKey)
+  let preferredPlans = selectedPlans.length ? selectedPlans : await defaultPlansFor(primarySourceKey, sites)
+  if (!preferredPlans.length && !replacementSourceKey) {
+    for (const key of fallbackHomeKeys(homeSourceKey)) {
       preferredPlans = await defaultPlansFor(key, sites)
       if (preferredPlans.length) break
     }
   }
   return {
-    plans: preferredPlans.length ? preferredPlans : plans,
+    plans: replacementSourceKey ? preferredPlans : preferredPlans.length ? preferredPlans : plans,
     missing,
     sites,
-    homeSourceKey
+    homeSourceKey,
+    replacementSourceKey,
+    replacementSite,
+    matchTimeout: settings.singleSourceTimeoutSeconds
   }
 }
 
-async function loadSection(plan: Plan): Promise<HomeSection> {
+async function loadSection(
+  plan: Plan,
+  replacementSourceKey?: string,
+  replacementSite?: Site,
+  matchTimeout = 2
+): Promise<HomeSection> {
   const base = {
     key: plan.key,
     title: plan.title,
@@ -221,9 +326,15 @@ async function loadSection(plan: Plan): Promise<HomeSection> {
   }
   try {
     if (plan.site.key === 'guazi') {
+      if (replacementSourceKey && !replacementSite) {
+        return { ...base, items: [], error: `首页替换源「${replacementSourceKey}」未启用` }
+      }
       const items = await listCongcongSourceHome(plan.site, plan.typeId, LIMIT, plan.pid)
-      if (!items.length) return { ...base, items: [], error: '瓜子首页片单没有返回数据' }
-      return { ...base, items }
+      if (!items.length) return { ...base, items: [], error: '瓜子首页加载失败：片单没有返回数据' }
+      if (!replacementSite) return { ...base, items }
+      const matched = await replaceGuaziItems(replacementSite, items, matchTimeout)
+      if (!matched.length) return { ...base, items: [], error: `「${replacementSite.name}」没有找到瓜子片单中的同名影片` }
+      return { ...base, items: matched }
     }
     if (plan.site.key === 'jianpian') {
       const items = await listJianpianHome(plan.site, LIMIT, plan.query, plan.categoryId)
@@ -242,7 +353,8 @@ async function loadSection(plan: Plan): Promise<HomeSection> {
       hasMore: page.pageCount ? page.pageCount > 1 : page.items.length > 0
     }
   } catch (err) {
-    return { ...base, items: [], error: (err as Error).message }
+    const error = (err as Error).message
+    return { ...base, items: [], error: plan.site.key === 'guazi' ? `瓜子首页加载失败：${error}` : error }
   }
 }
 
@@ -345,7 +457,7 @@ async function loadXiguaHomePage(plan: Plan, page: number): Promise<CmsHomePage>
 
 /** 展开时才逐页读取 AppleCMS 内容位，避免首屏请求随片单总量增长。 */
 export async function expandHomeSection(key: string): Promise<HomeSection> {
-  const { plans, sites } = await buildPlan()
+  const { plans, sites, replacementSourceKey, replacementSite, matchTimeout } = await buildPlan()
   let plan = plans.find((candidate) => candidate.key === key)
   if (!plan && key === 'xgzy::latest') {
     const site = sites.find((candidate) => candidate.key === 'xgzy' && isHomeSource(candidate))
@@ -368,14 +480,20 @@ export async function expandHomeSection(key: string): Promise<HomeSection> {
   }
   if (plan.site.key === 'guazi') {
     const items = await listCongcongSourceHome(plan.site, plan.typeId, Number.POSITIVE_INFINITY, plan.pid)
+    const displayedItems = replacementSourceKey
+      ? replacementSite
+        ? await replaceGuaziItems(replacementSite, items, matchTimeout)
+        : []
+      : items
+    if (replacementSourceKey && !replacementSite) throw new Error(`首页替换源「${replacementSourceKey}」未启用`)
     return {
       key: plan.key,
       title: plan.title,
       origin: plan.origin,
       siteKey: plan.site.key,
       siteName: plan.site.name,
-      items,
-      total: items.length,
+      items: displayedItems,
+      total: displayedItems.length,
       pageCount: 1,
       hasMore: false
     }
@@ -426,8 +544,8 @@ let cache: { sig: string; at: number; sections: HomeSection[] } | null = null
  * 不能让整个首页白屏。
  */
 export async function listHomeSections(force = false): Promise<HomeSection[]> {
-  const { plans, missing, sites, homeSourceKey } = await buildPlan()
-  const sig = `${homeSourceKey}|${plans.map((p) => `${p.key}:${p.pid ?? ''}:${p.query ?? ''}`).join('|')}`
+  const { plans, missing, sites, homeSourceKey, replacementSourceKey, replacementSite, matchTimeout } = await buildPlan()
+  const sig = `${homeSourceKey}|${replacementSite?.api ?? 'replacement-unavailable'}|${plans.map((p) => `${p.key}:${p.pid ?? ''}:${p.query ?? ''}`).join('|')}`
 
   if (!force && cache && cache.sig === sig) {
     const age = Date.now() - cache.at
@@ -444,16 +562,23 @@ export async function listHomeSections(force = false): Promise<HomeSection[]> {
     for (;;) {
       const index = cursor++
       if (index >= plans.length) return
-      sections[index] = await loadSection(plans[index])
+      sections[index] = await loadSection(plans[index], replacementSourceKey, replacementSite, matchTimeout)
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, plans.length) }, () => worker()))
 
   let filled = sections.filter(Boolean)
-  if (!filled.some((section) => section.items.length)) {
-    const fallbackKeys = homeSourceKey === 'guazi'
-      ? ['xgzy', 'jianpian']
-      : homeSourceKey === 'xgzy' ? ['jianpian'] : ['guazi', 'xgzy']
+  const guaziFailed = plans.length === 0 || filled.some((section) =>
+    section.siteKey === 'guazi' && section.error?.startsWith('瓜子首页加载失败：')
+  )
+  const hasItems = filled.some((section) => section.items.length)
+  const shouldFallback = replacementSourceKey
+    ? !hasItems && guaziFailed
+    : homeSourceKey === 'guazi'
+      ? !hasItems && guaziFailed
+      : !hasItems
+  if (shouldFallback) {
+    const fallbackKeys = fallbackHomeKeys(homeSourceKey)
     for (const key of fallbackKeys) {
       const fallbackPlans = await defaultPlansFor(key, sites)
       if (!fallbackPlans.length) continue

@@ -10,7 +10,7 @@ import { DanmakuSettingsPanel } from '@/components/DanmakuSettingsPanel'
 import { Icon } from '@/components/icons'
 import { Switch } from '@/components/Switch'
 import { detailKey, findSourceGroup, libraryKey, toFavoriteInput, useApp } from '@/store/useApp'
-import { createVideoPlayer, type VideoPlayer } from '@/utils/videojs'
+import { createVideoPlayer, seekVideoPlayer, type VideoPlayer } from '@/utils/videojs'
 import { isDirectMedia, isHls, pickPlayableLine } from '@/utils/media'
 import { formatClock } from '@/utils/format'
 import { normalizeName } from '@/utils/normalize'
@@ -1228,7 +1228,7 @@ export function Player({
                     onChange={(event) => {
                       const position = Number(event.currentTarget.value)
                       if (!activePlayer || !Number.isFinite(position)) return
-                      activePlayer.currentTime(position)
+                      seekVideoPlayer(activePlayer, position)
                       setPlaybackPosition(position)
                     }}
                   />

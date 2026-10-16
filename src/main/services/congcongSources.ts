@@ -31,7 +31,7 @@ const GUAZI_TOKEN_KEY = 'congcong-guazi-token'
 const GUAZI_DEVICE_KEY = 'congcong-guazi-device'
 const GUAZI_SIGNUP_DEVICE_KEY = 'congcong-guazi-signup-device'
 const JIANPIAN_IMAGE_ORIGIN = 'https://img.ypfbj.com'
-const JIANPIAN_PRIMARY_HOST = 'fan123.hzhnl.com'
+const JIANPIAN_PRIMARY_HOST = 'cqjdn.com'
 const JIANPIAN_DISCOVERY_URL = 'https://ssopj-1462720388.cos.accelerate.myqcloud.com/config.txt'
 const JIANPIAN_DEFAULT_HOSTS = [
   'cqjdn.com', 'bdgnbrws.com', 'fvevfbr.com', 'swgsdfew.com', 'hodpj.cc',
@@ -410,12 +410,17 @@ async function raceJianpianOrigins(
     return true
   })
   if (!candidates.length) throw new Error('没有新的荐片备用域名')
-  const results = await Promise.any(candidates.map(async (origin) => {
-    const result = await fetchJianpianOrigin(origin, path, query, timeout, failures, signal)
-    if (!result) throw new Error(`荐片域名不可用：${new URL(origin).hostname}`)
-    return result
-  }))
-  return results
+  const raceController = new AbortController()
+  const raceSignal = AbortSignal.any([signal, raceController.signal])
+  try {
+    return await Promise.any(candidates.map(async (origin) => {
+      const result = await fetchJianpianOrigin(origin, path, query, timeout, failures, raceSignal)
+      if (!result) throw new Error(`荐片域名不可用：${new URL(origin).hostname}`)
+      return result
+    }))
+  } finally {
+    raceController.abort()
+  }
 }
 
 async function fetchJianpianJson(
@@ -442,27 +447,24 @@ async function fetchJianpianJson(
   const attempted = new Set<string>()
   const primary = normalizeJianpianOrigin(lastSuccessfulJianpianOrigin || JIANPIAN_PRIMARY_HOST)
   const discovery = discoverJianpianOrigins()
-  const primaryResult = await fetchJianpianOrigin(primary, path, query, primaryTimeout, failures, parentSignal)
-  let parsed = primaryResult
-  if (!parsed) {
-    const fallbackController = new AbortController()
-    const signal = parentSignal
-      ? AbortSignal.any([parentSignal, fallbackController.signal])
-      : fallbackController.signal
-    const knownOrigins = (await jianpianCandidateOrigins()).filter((origin) => origin !== primary)
-    const fallbacks = [
-      raceJianpianOrigins(knownOrigins, path, query, fallbackTimeout, failures, signal, attempted),
+  const knownOrigins = (await jianpianCandidateOrigins()).filter((origin) => origin !== primary)
+  let parsed: Record<string, any> | null = null
+  const raceController = new AbortController()
+  const signal = parentSignal
+    ? AbortSignal.any([parentSignal, raceController.signal])
+    : raceController.signal
+  try {
+    const candidates = [
+      raceJianpianOrigins([primary, ...knownOrigins], path, query, primaryTimeout, failures, signal, attempted),
       discovery.then((origins) =>
         raceJianpianOrigins(origins, path, query, fallbackTimeout, failures, signal, attempted)
       )
     ]
-    try {
-      parsed = await Promise.any(fallbacks)
-    } catch {
-      parsed = null
-    } finally {
-      fallbackController.abort()
-    }
+    parsed = await Promise.any(candidates)
+  } catch {
+    parsed = null
+  } finally {
+    raceController.abort()
   }
   if (!parsed) throw new Error(`荐片接口候选域名均请求失败：${failures.join('；') || '没有可用域名'}`)
   if (cacheKey) {

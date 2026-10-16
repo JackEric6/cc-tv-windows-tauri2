@@ -44,7 +44,13 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
       volumePanel: { inline: false }
     },
     inactivityTimeout: 0,
-    html5: { vhs: { overrideNative: true, enableLowInitialPlaylist: false } } as any
+    html5: {
+      vhs: {
+        overrideNative: true,
+        enableLowInitialPlaylist: true,
+        useBandwidthFromLocalStorage: true
+      }
+    } as any
   })
   const volumeControl = (player.getChild('controlBar') as any)?.getChild('volumePanel')?.getChild('volumeControl')
   const updateVolumeLabel = (): void => {
@@ -113,4 +119,18 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
       : /\.mpd(?:$|[?#])/i.test(options.url) ? { type: 'application/dash+xml' } : {})
   })
   return player
+}
+
+/** 拖动 seek 时优先落到邻近关键帧，WebView2 不支持时回退到精确 currentTime。 */
+export function seekVideoPlayer(player: VideoPlayer, seconds: number): void {
+  const element = player.tech(true)?.el() as HTMLMediaElement | undefined
+  if (element && typeof element.fastSeek === 'function' && element.readyState >= 1) {
+    try {
+      element.fastSeek(seconds)
+      return
+    } catch {
+      // Metadata or seekable ranges may not be ready yet.
+    }
+  }
+  player.currentTime(seconds)
 }

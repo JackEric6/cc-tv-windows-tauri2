@@ -827,6 +827,10 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: Genera
               <option value="guazi">瓜子</option>
               <option value="xgzy">西瓜</option>
               <option value="jianpian">荐片</option>
+              <option value="dyttzy">天堂</option>
+              <option value="ffzy">非凡</option>
+              <option value="lzi">量子</option>
+              <option value="bfzy">暴风</option>
             </select>
             <div className="field-hint">{translate("选择后立即刷新首页片单")}</div>
           </div>
