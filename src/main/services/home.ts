@@ -26,6 +26,17 @@ const XIGUA_CHILDREN: Record<string, string[]> = {
   variety: ['25', '26', '27', '28'],
   anime: ['29', '30', '31', '32', '33']
 }
+const HOME_CATEGORIES: Array<{
+  key: keyof typeof XIGUA_CHILDREN
+  title: string
+  pattern: RegExp
+  fallbackTypeId: string
+}> = [
+  { key: 'movie', title: '热门电影', pattern: /电影/, fallbackTypeId: '1' },
+  { key: 'series', title: '热门电视剧', pattern: /电视剧|连续剧|剧集/, fallbackTypeId: '2' },
+  { key: 'variety', title: '热门综艺', pattern: /综艺/, fallbackTypeId: '3' },
+  { key: 'anime', title: '热门动漫', pattern: /动漫|动画/, fallbackTypeId: '4' }
+]
 const XIGUA_CHILD_TIMEOUT = 7
 const XIGUA_PAGE_SIZE = 20
 const GUAZI_REPLACEMENT_SOURCES = new Set(['dyttzy', 'ffzy', 'lzi', 'bfzy'])
@@ -163,49 +174,35 @@ async function defaultPlansFor(key: string, sites: Site[]): Promise<Plan[]> {
       { key: 'jianpian::anime', title: '荐片 · 热门动漫', origin: 'default', site, query: '热播', categoryId: '3' }
     ]
   }
-  if (key === 'xgzy') {
+  if (site.type === 3 || site.type === 4) {
+    let classes: Record<string, unknown>[] = []
     try {
       const url = buildCmsUrl(site, { ac: 'list' })
       const payload = parseLooseJson(await fetchText(url, { header: await resolveHeader(site, url) }))
       if (isCmsOk(payload)) {
         const body = payload as Record<string, unknown>
-        const classes = asArray<Record<string, unknown>>(body.class)
-        const roots = classes.filter((item) => {
+        const allClasses = asArray<Record<string, unknown>>(body.class)
+        const roots = allClasses.filter((item) => {
           const parent = String(item.type_pid ?? item.pid ?? '0').trim()
           return !parent || parent === '0'
         })
-        const categories = roots.length ? roots : classes
-        const wanted: Array<{ key: keyof typeof XIGUA_CHILDREN; title: string; pattern: RegExp }> = [
-          { key: 'movie', title: '热门电影', pattern: /电影/ },
-          { key: 'series', title: '热门电视剧', pattern: /电视剧|连续剧|剧集/ },
-          { key: 'variety', title: '热门综艺', pattern: /综艺/ },
-          { key: 'anime', title: '热门动漫', pattern: /动漫|动画/ }
-        ]
-        const plans = wanted.flatMap((category) => {
-          const item = categories.find((candidate) => category.pattern.test(String(candidate.type_name ?? candidate.name ?? '')))
-          const typeId = String(item?.type_id ?? item?.id ?? '').trim()
-          return typeId
-            ? [{
-                key: `xgzy::${category.key}`,
-                title: `西瓜 · ${category.title}`,
-                origin: 'default' as const,
-                site,
-                typeId,
-                childTypeIds: XIGUA_CHILDREN[category.key]
-              }]
-            : []
-        })
-        if (plans.length) return plans
+        classes = roots.length ? roots : allClasses
       }
     } catch {
-      // 分类表短暂不可用时，保留常见 CMS 分类入口并由内容请求显示源错误。
+      // Keep the standard CMS category ids so the fallback template remains available.
     }
-    return [
-      { key: 'xgzy::movie', title: '西瓜 · 热门电影', origin: 'default', site, typeId: '1', childTypeIds: XIGUA_CHILDREN.movie },
-      { key: 'xgzy::series', title: '西瓜 · 热门电视剧', origin: 'default', site, typeId: '2', childTypeIds: XIGUA_CHILDREN.series },
-      { key: 'xgzy::variety', title: '西瓜 · 热门综艺', origin: 'default', site, typeId: '3', childTypeIds: XIGUA_CHILDREN.variety },
-      { key: 'xgzy::anime', title: '西瓜 · 热门动漫', origin: 'default', site, typeId: '4', childTypeIds: XIGUA_CHILDREN.anime }
-    ]
+    return HOME_CATEGORIES.map((category) => {
+      const item = classes.find((candidate) => category.pattern.test(String(candidate.type_name ?? candidate.name ?? '')))
+      const typeId = String(item?.type_id ?? item?.id ?? category.fallbackTypeId).trim()
+      return {
+        key: `${key}::${category.key}`,
+        title: `${site.name} · ${category.title}`,
+        origin: 'default',
+        site,
+        typeId,
+        ...(key === 'xgzy' ? { childTypeIds: XIGUA_CHILDREN[category.key] } : {})
+      }
+    })
   }
   return [{ key: `${key}::latest`, title: `${site.name} · 最近更新`, origin: 'default', site }]
 }
