@@ -3,8 +3,8 @@ const ANDROID_SOURCE_ORDER = [
   'bfzy', 'lzi', 'suboziyuan', 'tyzy', 'yaya', 'jinying', 'guangsu', 'dyttzy', 'jisu', 'huya',
   'xinlang', 'shandian', 'maoyan', 'okzy', 'ffzy', 'douban', 'dzzy', 'juliang', 'bdzy', 'yhzy',
   'ukuzy', 'zuida', 'hongniu', 'modu', 'yparse', 'mtzy0',
-  'ikanbot', 'fhw88', 'guazi', 'cz4k', 'jianpian', 'cechi', 'zanpian', 'fan_nomi', 'fan_moli',
-  'fan_cheese', 'fan_jianpian', 'cms_baidu', 'cms_baofeng'
+  'ikanbot', 'fhw88', 'guazi', 'cz4k', 'cechi', 'zanpian', 'fan_nomi', 'fan_moli',
+  'fan_cheese', 'fan_jianpian', 'cms_baidu', 'cms_baofeng', 'jianpian'
 ]
 
 const ANDROID_SOURCE_KEYS = new Set([...ANDROID_SOURCE_ORDER, 'yutu'])
@@ -59,6 +59,7 @@ export function isAndroidSearchSource(siteKey: string): boolean {
 export function androidSearchPriority(siteKey: string, siteName = ''): number {
   const key = siteKey.trim().toLowerCase()
   const normalizedKey = SOURCE_ALIASES[key] ?? key
+  if (normalizedKey === 'jianpian' || siteName.includes('荐片')) return Number.MAX_SAFE_INTEGER
   const fixed = SEARCH_RESULT_ORDER.get(normalizedKey)
   if (fixed !== undefined) return fixed
 

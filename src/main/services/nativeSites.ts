@@ -156,7 +156,12 @@ function nomiDetail(site: Site, id: string, html: string): VodDetail {
   return finishDetail(vod, lines, text)
 }
 
-async function fetchIkanbot(url: string, referer = `${IKANBOT_ORIGIN}/`): Promise<string> {
+async function fetchIkanbot(
+  url: string,
+  referer = `${IKANBOT_ORIGIN}/`,
+  timeoutMs = 25_000,
+  signal?: AbortSignal
+): Promise<string> {
   const target = new URL(url)
   const jar = cookies.get(target.host) ?? new Map<string, string>()
   cookies.set(target.host, jar)
@@ -183,7 +188,9 @@ async function fetchIkanbot(url: string, referer = `${IKANBOT_ORIGIN}/`): Promis
     return networkFetch(requestUrl, {
       headers,
       credentials: 'include',
-      signal: AbortSignal.timeout(25000)
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs)
     })
   }
   const saveCookies = (response: Response, host: string): boolean => {
@@ -400,12 +407,18 @@ export function isNativeAdaptedSite(key: string): boolean {
   return key === 'fan_nomi' || key === 'ikanbot' || key === 'cz4k'
 }
 
-export async function searchNativeSite(site: Site, keyword: string, limit: number): Promise<Vod[]> {
+export async function searchNativeSite(
+  site: Site,
+  keyword: string,
+  limit: number,
+  timeoutMs = CZ4K_SEARCH_TIMEOUT_MS,
+  signal?: AbortSignal
+): Promise<Vod[]> {
   const origin = sourceOrigin(site)
   if (site.key === 'ikanbot') {
     const url = new URL('/search', origin)
     url.searchParams.set('q', keyword)
-    return ikanbotSearch(site, await fetchIkanbot(url.href), keyword, limit)
+    return ikanbotSearch(site, await fetchIkanbot(url.href, `${IKANBOT_ORIGIN}/`, timeoutMs, signal), keyword, limit)
   }
   if (site.key === 'fan_nomi') {
     const url = new URL('/index.php?m=vod-search', origin)
@@ -419,12 +432,13 @@ export async function searchNativeSite(site: Site, keyword: string, limit: numbe
       method: 'POST',
       body: new URLSearchParams({ wd: keyword }),
       header,
-      timeout: site.timeout ?? 15
+      timeout: timeoutMs / 1000,
+      signal
     }), keyword, limit)
   }
   const url = new URL('/nimasile', origin)
   url.searchParams.set('q', keyword)
-  return cz4kSearch(site, await fetchCz4k(url.href, CZ4K_SEARCH_TIMEOUT_MS), keyword, limit)
+  return cz4kSearch(site, await fetchCz4k(url.href, Math.min(CZ4K_SEARCH_TIMEOUT_MS, timeoutMs)), keyword, limit)
 }
 
 export async function getNativeSiteDetail(site: Site, id: string): Promise<VodDetail> {

@@ -11,6 +11,24 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 
 const CZ4K_WEBVIEW_DEADLINE_MS: u64 = 30_000;
+const WEBVIEW2_AUTOPLAY_ARGUMENT: &str = "--autoplay-policy=no-user-gesture-required";
+
+fn allow_webview_media_autoplay() {
+    let current = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+    if current
+        .split_whitespace()
+        .any(|argument| argument == WEBVIEW2_AUTOPLAY_ARGUMENT)
+    {
+        return;
+    }
+
+    let arguments = if current.trim().is_empty() {
+        WEBVIEW2_AUTOPLAY_ARGUMENT.to_string()
+    } else {
+        format!("{} {}", current.trim(), WEBVIEW2_AUTOPLAY_ARGUMENT)
+    };
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", arguments);
+}
 
 struct BackendProcess {
     base_url: String,
@@ -327,6 +345,7 @@ fn saved_window_size(data_dir: &Path) -> Option<(f64, f64)> {
 }
 
 pub fn run() {
+    allow_webview_media_autoplay();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())

@@ -418,10 +418,15 @@ async function raceJianpianOrigins(
   return results
 }
 
-async function fetchJianpianJson(path: string, query: URLSearchParams): Promise<Record<string, any>> {
+async function fetchJianpianJson(
+  path: string,
+  query: URLSearchParams,
+  timeoutOverride?: number,
+  parentSignal?: AbortSignal
+): Promise<Record<string, any>> {
   const isSearch = path === '/api/v2/search/videoV2'
-  const primaryTimeout = isSearch ? 6000 : 8000
-  const fallbackTimeout = isSearch ? 4000 : 6000
+  const primaryTimeout = Math.min(timeoutOverride ?? (isSearch ? 6000 : 8000), isSearch ? 6000 : 8000)
+  const fallbackTimeout = Math.min(timeoutOverride ?? (isSearch ? 4000 : 6000), isSearch ? 4000 : 6000)
   const cacheKey = path === '/api/v2/search/videoV2' ? `${path}?${query.toString()}` : ''
   if (cacheKey) {
     const cached = jianpianSearchCache.get(cacheKey)
@@ -437,15 +442,18 @@ async function fetchJianpianJson(path: string, query: URLSearchParams): Promise<
   const attempted = new Set<string>()
   const primary = normalizeJianpianOrigin(lastSuccessfulJianpianOrigin || JIANPIAN_PRIMARY_HOST)
   const discovery = discoverJianpianOrigins()
-  const primaryResult = await fetchJianpianOrigin(primary, path, query, primaryTimeout, failures)
+  const primaryResult = await fetchJianpianOrigin(primary, path, query, primaryTimeout, failures, parentSignal)
   let parsed = primaryResult
   if (!parsed) {
-    const signal = new AbortController()
+    const fallbackController = new AbortController()
+    const signal = parentSignal
+      ? AbortSignal.any([parentSignal, fallbackController.signal])
+      : fallbackController.signal
     const knownOrigins = (await jianpianCandidateOrigins()).filter((origin) => origin !== primary)
     const fallbacks = [
-      raceJianpianOrigins(knownOrigins, path, query, fallbackTimeout, failures, signal.signal, attempted),
+      raceJianpianOrigins(knownOrigins, path, query, fallbackTimeout, failures, signal, attempted),
       discovery.then((origins) =>
-        raceJianpianOrigins(origins, path, query, fallbackTimeout, failures, signal.signal, attempted)
+        raceJianpianOrigins(origins, path, query, fallbackTimeout, failures, signal, attempted)
       )
     ]
     try {
@@ -453,7 +461,7 @@ async function fetchJianpianJson(path: string, query: URLSearchParams): Promise<
     } catch {
       parsed = null
     } finally {
-      signal.abort()
+      fallbackController.abort()
     }
   }
   if (!parsed) throw new Error(`荐片接口候选域名均请求失败：${failures.join('；') || '没有可用域名'}`)
@@ -515,7 +523,13 @@ function createGuaziForm(params: Record<string, unknown>, token: string): URLSea
   })
 }
 
-async function performGuaziRequest(path: string, params: Record<string, unknown>, token: string): Promise<any> {
+async function performGuaziRequest(
+  path: string,
+  params: Record<string, unknown>,
+  token: string,
+  parentSignal?: AbortSignal,
+  timeoutMs = 25_000
+): Promise<any> {
   const response = await networkFetch(`${GUAZI_ORIGIN}${path}`, {
     method: 'POST',
     headers: {
@@ -528,7 +542,9 @@ async function performGuaziRequest(path: string, params: Record<string, unknown>
       Referer: GUAZI_ORIGIN
     },
     body: createGuaziForm(params, token),
-    signal: AbortSignal.timeout(25000)
+    signal: parentSignal
+      ? AbortSignal.any([parentSignal, AbortSignal.timeout(timeoutMs)])
+      : AbortSignal.timeout(timeoutMs)
   })
   const raw = await response.text()
   const outer = asObject(parseLooseJson(raw))
@@ -586,15 +602,22 @@ async function getGuaziToken(): Promise<string> {
   return tokenLoad
 }
 
-async function guaziRequest(path: string, params: Record<string, unknown>): Promise<any> {
+async function guaziRequest(
+  path: string,
+  params: Record<string, unknown>,
+  signal?: AbortSignal,
+  timeoutMs = 25_000
+): Promise<any> {
   const token = await getGuaziToken()
+  signal?.throwIfAborted()
   try {
-    return await performGuaziRequest(path, params, token)
+    return await performGuaziRequest(path, params, token, signal, timeoutMs)
   } catch (error) {
     if ((error as Error).name !== 'GuaziAuthError') throw error
     cachedGuaziToken = ''
     await writeStore(GUAZI_TOKEN_KEY, '')
-    return performGuaziRequest(path, params, await registerGuaziDevice())
+    signal?.throwIfAborted()
+    return performGuaziRequest(path, params, await registerGuaziDevice(), signal, timeoutMs)
   }
 }
 
@@ -613,16 +636,22 @@ function mapGuaziList(value: unknown, site: Site, limit: number, keyword = ''): 
     .slice(0, limit)
 }
 
-export async function searchCongcongSource(site: Site, keyword: string, limit: number): Promise<Vod[]> {
+export async function searchCongcongSource(
+  site: Site,
+  keyword: string,
+  limit: number,
+  timeoutMs = 25_000,
+  signal?: AbortSignal
+): Promise<Vod[]> {
   if (site.key === 'jianpian') {
-    return searchJianpianPage(site, keyword, 1, limit)
+    return searchJianpianPage(site, keyword, 1, limit, '88', true, timeoutMs, signal)
   }
 
   const payload = await guaziRequest('/App/Index/findMoreVod', {
     keywords: keyword,
     order_val: '0',
     search_type: ''
-  })
+  }, signal, timeoutMs)
   return mapGuaziList(payload, site, limit, keyword)
 }
 
@@ -632,7 +661,9 @@ async function searchJianpianPage(
   page: number,
   limit: number,
   categoryId = '88',
-  filterKeyword = true
+  filterKeyword = true,
+  timeoutMs?: number,
+  signal?: AbortSignal
 ): Promise<Vod[]> {
   const query = new URLSearchParams({
     key: keyword,
@@ -640,7 +671,7 @@ async function searchJianpianPage(
     page: String(Math.max(1, page)),
     pageSize: String(Math.max(1, Math.min(100, Number.isFinite(limit) ? limit : 100)))
   })
-  const payload = await fetchJianpianJson('/api/v2/search/videoV2', query)
+  const payload = await fetchJianpianJson('/api/v2/search/videoV2', query, timeoutMs, signal)
   const nested = unwrap(payload, 'data', 'result', 'payload')
   const direct = firstArray(payload, 'data', 'items', 'list', 'vod_list')
   const raw = direct.length ? direct : firstArray(nested, 'items', 'list', 'vod_list', 'video_list')

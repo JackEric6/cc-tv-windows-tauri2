@@ -852,7 +852,7 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: Genera
               value={draft.timeout}
               onChange={(e) => setDraft({ ...draft, timeout: clampInt(e.target.value, 3, 120, 3) })}
             />
-            <div className="field-hint">{translate("单个站点搜索与详情请求的最长等待时间")}</div>
+            <div className="field-hint">{translate("普通接口与详情请求的等待时间；聚合搜索每个源固定等待 1 秒")}</div>
           </div>
           <div className="field">
             <label>{translate("界面密度")}</label>

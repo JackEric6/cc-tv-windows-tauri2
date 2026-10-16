@@ -7,7 +7,7 @@ import { prepareMediaUrl } from './mediaProxy'
 import { resolvePlayUrl } from './parse'
 import { resolveCz4kEpisode, resolveNomiEpisode } from './nativeSites'
 
-const M3U8_PURIFY_EXEMPT_SOURCES = new Set(['guazi', 'jianpian'])
+const M3U8_PURIFY_EXEMPT_SOURCES = new Set(['guazi'])
 
 export function shouldPurifyM3u8(siteKey: string, enabled: boolean): boolean {
   return enabled && !M3U8_PURIFY_EXEMPT_SOURCES.has(siteKey.toLowerCase())

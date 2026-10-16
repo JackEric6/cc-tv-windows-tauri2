@@ -22,8 +22,8 @@ export function VodCard({
     <div className="vod-card">
       <Link
         className="vod-card-main"
-        to={`/detail/${encodeURIComponent(vod.siteKey)}/${encodeURIComponent(vod.vod_id)}`}
-        state={{ returnTo }}
+        to={`/play/${encodeURIComponent(vod.siteKey)}/${encodeURIComponent(vod.vod_id)}/0/0`}
+        state={{ playbackReturnTo: returnTo, autoPlay: true }}
       >
         <Poster src={vod.vod_pic} fallbacks={[
           ...(vod.posterFallbacks ?? []),
@@ -47,8 +47,8 @@ export function VodCard({
             key={`${source.siteKey}-${source.vod_id}`}
             className="tag tag-outline vod-card-source"
             title={`查看「${source.siteName}」来源`}
-            to={`/detail/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}`}
-            state={{ returnTo }}
+            to={`/play/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}/0/0`}
+            state={{ playbackReturnTo: returnTo, autoPlay: true }}
           >
             {source.siteName}
           </Link>

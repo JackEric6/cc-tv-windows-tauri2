@@ -18,6 +18,7 @@ export interface RequestOptions {
   body?: string | URLSearchParams
   /** 强制指定编码，不传则自动嗅探 */
   encoding?: string
+  signal?: AbortSignal
   /** 允许非 2xx 也当成功（部分站点返回 500 但带数据） */
   allowHttpError?: boolean
 }
@@ -80,6 +81,9 @@ export async function request(url: string, options: RequestOptions = {}): Promis
   const timeoutMs = (options.timeout ?? 20) * 1000
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const abortFromParent = (): void => controller.abort()
+  if (options.signal?.aborted) controller.abort()
+  else options.signal?.addEventListener('abort', abortFromParent, { once: true })
   try {
     const headers = normalizeRequestHeaders({
       'User-Agent': DEFAULT_UA,
@@ -108,6 +112,7 @@ export async function request(url: string, options: RequestOptions = {}): Promis
     throw new Error(e.message || '网络请求失败')
   } finally {
     clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortFromParent)
   }
 }
 

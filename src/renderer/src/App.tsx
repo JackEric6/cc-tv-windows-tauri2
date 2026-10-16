@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { matchPath, NavLink, Route, Routes, useLocation, useNavigationType, useSearchParams } from 'react-router-dom'
+import { matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
 import { Toasts } from '@/components/Toasts'
@@ -9,7 +9,6 @@ import { setUiLanguage, translate } from '@/i18n'
 import { Home } from '@/pages/Home'
 import { Search } from '@/pages/Search'
 import { Player } from '@/pages/Player'
-import { Detail } from '@/pages/Detail'
 import { PlaybackHome } from '@/pages/PlaybackHome'
 import { Library } from '@/pages/Library'
 import { Sites } from '@/pages/Sites'
@@ -21,6 +20,7 @@ import '@/styles/pages.css'
 export default function App(): JSX.Element {
   const location = useLocation()
   const navigationType = useNavigationType()
+  const routeState = location.state as { autoPlay?: unknown } | null
   const [lastPlayerLocation, setLastPlayerLocation] = useState<ReturnType<typeof useLocation> | null>(null)
   const isPlayerRoute = Boolean(matchPath('/play/:siteKey/:vodId/:lineIndex/:epIndex', location.pathname))
   const clearCachedPlayer = (location.state as { clearPlayer?: unknown } | null)?.clearPlayer === true
@@ -67,7 +67,7 @@ export default function App(): JSX.Element {
                 <Route path="/" element={noSources ? <FirstRun /> : <HomeRoute />} />
                 <Route path="/play" element={<PlaybackHome />} />
                 <Route path="/search" element={<Search />} />
-                <Route path="/detail/:siteKey/:vodId" element={<Detail />} />
+                <Route path="/detail/:siteKey/:vodId" element={<LegacyDetailRedirect />} />
                 <Route path="/library" element={<Library />} />
                 <Route path="/downloads" element={<Downloads />} />
                 <Route path="/offline/:id" element={<OfflinePlayer />} />
@@ -80,7 +80,7 @@ export default function App(): JSX.Element {
             <div className={`player-persistent-host${playerVisible ? ' visible' : ''}`} aria-hidden={!playerVisible}>
               <Routes location={playerLocation}>
                 <Route path="/play/:siteKey/:vodId/:lineIndex/:epIndex" element={
-                  <Player visible={playerVisible} autoPlay={isPlayerRoute && navigationType !== 'POP'} />
+                  <Player visible={playerVisible} autoPlay={isPlayerRoute && (navigationType !== 'POP' || routeState?.autoPlay === true)} />
                 } />
               </Routes>
             </div>
@@ -95,6 +95,21 @@ export default function App(): JSX.Element {
 function HomeRoute(): JSX.Element {
   const [params] = useSearchParams()
   return params.get('wd')?.trim() ? <Search /> : <Home />
+}
+
+function LegacyDetailRedirect(): JSX.Element {
+  const { siteKey = '', vodId = '' } = useParams()
+  const location = useLocation()
+  const routeState = location.state as { returnTo?: unknown; playbackReturnTo?: unknown } | null
+  const returnTo = [routeState?.playbackReturnTo, routeState?.returnTo]
+    .find((value): value is string => typeof value === 'string' && value.startsWith('/') && !value.startsWith('//'))
+  return (
+    <Navigate
+      replace
+      to={`/play/${encodeURIComponent(siteKey)}/${encodeURIComponent(vodId)}/0/0`}
+      state={{ playbackReturnTo: returnTo, autoPlay: true }}
+    />
+  )
 }
 
 /** 首次启动：还没有任何配置源，直接引导到配置页而不是给一个空壳 */

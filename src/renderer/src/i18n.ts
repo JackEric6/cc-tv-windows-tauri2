@@ -40,7 +40,7 @@ const english: Record<string, string> = {
   '聚合搜索并发数': 'Search concurrency',
   '同时请求的站点数量，过大可能被部分站点限流（1–32）': 'Number of sources queried at once. High values may trigger rate limits (1–32).',
   '请求超时（秒）': 'Request timeout (seconds)',
-  '单个站点搜索与详情请求的最长等待时间': 'Maximum wait for a source search or detail request',
+  '普通接口与详情请求的等待时间；聚合搜索每个源固定等待 1 秒': 'Timeout for detail and other API requests; aggregate search waits at most 1 second per source',
   '首页片单来源': 'Home feed source',
   '选择后立即刷新首页片单': 'The home feed refreshes immediately after selection',
   '界面密度': 'Interface density',

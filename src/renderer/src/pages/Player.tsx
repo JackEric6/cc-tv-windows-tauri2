@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { AppSettings, DanmakuCandidate, DanmakuCue } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { AiSummary } from '@/components/AiSummary'
@@ -91,7 +91,6 @@ export function Player({
 
   const location = useLocation()
   const navigate = useNavigate()
-  const navigationType = useNavigationType()
   const routeState = location.state as { playbackReturnTo?: unknown } | null
   const playbackReturnTo = typeof routeState?.playbackReturnTo === 'string' &&
     routeState.playbackReturnTo.startsWith('/') && !routeState.playbackReturnTo.startsWith('//')
@@ -756,7 +755,7 @@ export function Player({
       player?.pause()
       return
     }
-    const shouldAutoplay = autoPlay && navigationType !== 'POP'
+    const shouldAutoplay = autoPlay
     if (routeChanged) {
       autoplayRef.current = shouldAutoplay
       if (shouldAutoplay && player?.paused()) {
@@ -770,7 +769,7 @@ export function Player({
     if (shouldAutoplay && player?.paused()) {
       void Promise.resolve(player.play()).catch(() => undefined)
     }
-  }, [autoPlay, visible, navigationType, playerRouteKey, restoreHeldPlaybackRate])
+  }, [autoPlay, visible, playerRouteKey, restoreHeldPlaybackRate])
 
   const startHeldPlaybackRate = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     if (event.pointerType !== 'mouse' || event.button !== 0 || heldPlaybackRateRef.current || !activePlayer) return
@@ -1292,6 +1291,38 @@ export function Player({
             <div className="player-note">
               <Icon name="info" size={13} />
               {resolveNote}
+              {danmakuCandidates.length > 1 ? (
+                <div className="danmaku-choice danmaku-choice-inline">
+                  <label htmlFor="danmaku-match">{translate("弹幕匹配")}</label>
+                  <select
+                    id="danmaku-match"
+                    className="input"
+                    value={selectedDanmaku}
+                    onChange={async (event) => {
+                      const id = event.target.value
+                      const sequence = ++danmakuSequence.current
+                      cancelDanmakuBatches()
+                      setSelectedDanmaku(id)
+                      setDanmakuCues([])
+                      setDanmakuMessage(translate('正在加载弹幕…'))
+                      try {
+                        const cues = await window.api.danmaku.load(id, danmakuRequestId)
+                        if (danmakuSequence.current !== sequence) return
+                        if (!cues.length) {
+                          setDanmakuMessage(translate('该匹配项暂无弹幕'))
+                          return
+                        }
+                        displayDanmakuProgressively(cues, () => danmakuSequence.current === sequence)
+                      } catch (err) {
+                        if (danmakuSequence.current !== sequence) return
+                        setDanmakuMessage((err as Error).message)
+                      }
+                    }}
+                  >
+                    {danmakuCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+                  </select>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -1472,39 +1503,6 @@ export function Player({
               </section>
             </div>,
             isFullscreen && stageRef.current ? stageRef.current : document.body
-          ) : null}
-
-          {danmakuCandidates.length > 1 ? (
-            <div className="danmaku-choice">
-              <label htmlFor="danmaku-match">{translate("弹幕匹配")}</label>
-              <select
-                id="danmaku-match"
-                className="input"
-                value={selectedDanmaku}
-                onChange={async (event) => {
-                  const id = event.target.value
-                  const sequence = ++danmakuSequence.current
-                  cancelDanmakuBatches()
-                  setSelectedDanmaku(id)
-                  setDanmakuCues([])
-                  setDanmakuMessage(translate('正在加载弹幕…'))
-                  try {
-                    const cues = await window.api.danmaku.load(id, danmakuRequestId)
-                    if (danmakuSequence.current !== sequence) return
-                    if (!cues.length) {
-                      setDanmakuMessage(translate('该匹配项暂无弹幕'))
-                      return
-                    }
-                    displayDanmakuProgressively(cues, () => danmakuSequence.current === sequence)
-                  } catch (err) {
-                    if (danmakuSequence.current !== sequence) return
-                    setDanmakuMessage((err as Error).message)
-                  }
-                }}
-              >
-                {danmakuCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-              </select>
-            </div>
           ) : null}
 
           {error ? <div className="banner banner-danger">{error}</div> : null}

@@ -11,8 +11,8 @@ import { isNativeAdaptedSite, searchNativeSite } from './nativeSites'
 const DEFAULT_LIMIT = 30
 const SEARCH_CACHE_TTL_MS = 60_000
 const SEARCH_CACHE_LIMIT = 120
-const SEARCH_SITE_MIN_WAIT_MS = 10_000
-const SEARCH_SITE_MAX_WAIT_MS = 30_000
+const SEARCH_SITE_TIMEOUT_SECONDS = 1
+const SEARCH_SITE_TIMEOUT_MS = SEARCH_SITE_TIMEOUT_SECONDS * 1000
 
 interface SearchCacheEntry {
   createdAt: number
@@ -24,9 +24,12 @@ const searchInFlight = new Map<string, Promise<SiteSearchResult>>()
 
 /** 搜索请求的取消令牌：发起新搜索时旧的那一批会自行停下 */
 let currentToken = 0
+const activeSearchControllers = new Set<AbortController>()
 
 export function cancelSearch(): void {
   currentToken++
+  for (const controller of activeSearchControllers) controller.abort()
+  activeSearchControllers.clear()
 }
 
 function searchCacheKey(site: Site, keyword: string, limit: number, timeout: number): string {
@@ -64,37 +67,45 @@ function writeSearchCache(key: string, result: SiteSearchResult): void {
   }
 }
 
-function searchSiteCached(site: Site, keyword: string, limit: number, timeout: number): Promise<SiteSearchResult> {
+function searchSiteCached(
+  site: Site,
+  keyword: string,
+  limit: number,
+  timeout: number,
+  signal: AbortSignal,
+  requestToken: number
+): Promise<SiteSearchResult> {
   const key = searchCacheKey(site, keyword, limit, timeout)
   const cached = readSearchCache(key)
   if (cached) return Promise.resolve(cached)
 
-  const existing = searchInFlight.get(key)
+  const inFlightKey = `${key}:${requestToken}`
+  const existing = searchInFlight.get(inFlightKey)
   if (existing) return existing.then((result) => copySearchResult(result))
 
-  const request = searchSite(site, keyword, limit, timeout)
+  const request = searchSite(site, keyword, limit, timeout, signal)
     .then((result) => {
       writeSearchCache(key, result)
       return result
     })
     .finally(() => {
-      searchInFlight.delete(key)
+      searchInFlight.delete(inFlightKey)
     })
-  searchInFlight.set(key, request)
+  searchInFlight.set(inFlightKey, request)
   return request.then((result) => copySearchResult(result))
 }
 
 function withSiteSearchDeadline(
   site: Site,
   promise: Promise<SiteSearchResult>,
-  timeout: number
+  controller: AbortController
 ): Promise<SiteSearchResult> {
-  const deadline = Math.max(SEARCH_SITE_MIN_WAIT_MS, Math.min(SEARCH_SITE_MAX_WAIT_MS, timeout * 1000))
   let timer: NodeJS.Timeout | undefined
   const timedOut = new Promise<SiteSearchResult>((resolve) => {
     timer = setTimeout(() => {
-      resolve(fail(site, `搜索超过 ${Math.round(deadline / 1000)} 秒，已跳过该站点`, deadline))
-    }, deadline)
+      resolve(fail(site, '搜索超过 1 秒，已跳过该站点', SEARCH_SITE_TIMEOUT_MS))
+      controller.abort()
+    }, SEARCH_SITE_TIMEOUT_MS)
   })
   return Promise.race([promise, timedOut]).finally(() => {
     if (timer) clearTimeout(timer)
@@ -147,7 +158,7 @@ export function cmsItemToVod(raw: Record<string, unknown>, site: Site): Vod {
   }
 }
 
-async function searchCms(site: Site, wd: string, limit: number, timeout: number): Promise<Vod[]> {
+async function searchCms(site: Site, wd: string, limit: number, timeout: number, signal?: AbortSignal): Promise<Vod[]> {
   let lastError: Error | undefined
   let emptyResult: Vod[] = []
   for (const candidate of cmsApiCandidates(site)) {
@@ -162,7 +173,7 @@ async function searchCms(site: Site, wd: string, limit: number, timeout: number)
         const referer = cmsRefererForApi(candidate.api)
         if (referer) header.Referer = referer
       }
-      const text = await fetchText(url, { header, timeout })
+      const text = await fetchText(url, { header, timeout, signal })
       const payload = parseLooseJson<Record<string, unknown>>(text)
       if (!isCmsOk(payload)) throw new Error(`接口返回异常：${String(payload?.msg ?? 'code 非成功')}`)
       const list = asArray<Record<string, unknown>>(payload.list)
@@ -181,14 +192,14 @@ async function searchCms(site: Site, wd: string, limit: number, timeout: number)
   return emptyResult
 }
 
-async function searchHtml(site: Site, wd: string, limit: number, timeout: number): Promise<Vod[]> {
+async function searchHtml(site: Site, wd: string, limit: number, timeout: number, signal?: AbortSignal): Promise<Vod[]> {
   const template = (site.rules?.search || site.api).trim()
   const target = template.replace(/\{(wd|kw|key|keyword)\}/gi, encodeURIComponent(wd))
   if (!/^https?:\/\//i.test(target)) {
     throw new Error('网页规则站缺少可请求的搜索地址')
   }
   const header = await resolveHeader(site, target)
-  const text = await fetchText(target, { header, timeout })
+  const text = await fetchText(target, { header, timeout, signal })
   const $ = cheerio.load(text)
   const rules = site.rules ?? {}
   const nodes = $((rules.list || '').trim())
@@ -226,7 +237,8 @@ export async function searchSite(
   site: Site,
   wd: string,
   limit = DEFAULT_LIMIT,
-  timeoutOverride?: number
+  timeoutOverride?: number,
+  signal?: AbortSignal
 ): Promise<SiteSearchResult> {
   const start = Date.now()
   if (site.unsupported) return fail(site, site.unsupported)
@@ -234,16 +246,16 @@ export async function searchSite(
   if (!site.api) return fail(site, '站点未配置接口地址')
 
   try {
-    const timeout = site.timeout ?? timeoutOverride ?? (await getSettings()).timeout
+    const timeout = timeoutOverride ?? site.timeout ?? (await getSettings()).timeout
     let list: Vod[]
     if (isNativeAdaptedSite(site.key)) {
-      list = await searchNativeSite(site, wd, limit)
+      list = await searchNativeSite(site, wd, limit, timeout * 1000, signal)
     } else if (site.key === 'guazi' || site.key === 'jianpian') {
-      list = await searchCongcongSource(site, wd, limit)
+      list = await searchCongcongSource(site, wd, limit, timeout * 1000, signal)
     } else if (site.type === 3 || site.type === 4) {
-      list = await searchCms(site, wd, limit, timeout)
+      list = await searchCms(site, wd, limit, timeout, signal)
     } else if (site.type === 1) {
-      list = await searchHtml(site, wd, limit, timeout)
+      list = await searchHtml(site, wd, limit, timeout, signal)
     } else {
       return fail(site, site.unsupported ?? '该类型暂不支持搜索')
     }
@@ -264,7 +276,9 @@ export async function searchSite(
 /** 列出当前可以参与聚合搜索的站点 */
 export async function searchableSites(): Promise<Site[]> {
   const sites = await getSites()
-  return sites.filter((s) => s.enabled && s.searchEnabled && s.searchable && !s.unsupported)
+  return sites
+    .filter((s) => s.enabled && s.searchEnabled && s.searchable && !s.unsupported)
+    .sort((a, b) => Number(a.key === 'jianpian') - Number(b.key === 'jianpian'))
 }
 
 /**
@@ -301,7 +315,7 @@ export async function searchAll(
   let done = 0
   for (let index = 0; index < targets.length; index++) {
     const site = targets[index]
-    const timeout = site.timeout ?? settings.timeout
+    const timeout = SEARCH_SITE_TIMEOUT_SECONDS
     const cached = readSearchCache(searchCacheKey(site, keyword, limit, timeout))
     if (!cached) {
       pendingIndexes.push(index)
@@ -321,12 +335,19 @@ export async function searchAll(
       if (pendingIndex >= pendingIndexes.length) return
       const index = pendingIndexes[pendingIndex]
       const site = targets[index]
-      const timeout = site.timeout ?? settings.timeout
-      const result = await withSiteSearchDeadline(
-        site,
-        searchSiteCached(site, keyword, limit, timeout),
-        timeout
-      )
+      const timeout = SEARCH_SITE_TIMEOUT_SECONDS
+      const controller = new AbortController()
+      activeSearchControllers.add(controller)
+      let result: SiteSearchResult
+      try {
+        result = await withSiteSearchDeadline(
+          site,
+          searchSiteCached(site, keyword, limit, timeout, controller.signal, token),
+          controller
+        )
+      } finally {
+        activeSearchControllers.delete(controller)
+      }
       if (token !== currentToken) return
       results[index] = result
       done++
