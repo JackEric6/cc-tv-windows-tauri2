@@ -95,11 +95,34 @@ textarea {
 }
 
 .app-content {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg);
+}
+
+.player-persistent-host {
+  position: absolute;
+  top: 0;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.player-persistent-host.visible {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .page {

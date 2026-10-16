@@ -24,6 +24,7 @@ export function Sidebar(): JSX.Element {
 
   const nav: NavDef[] = [
     { to: '/', label: '首页', icon: 'home' },
+    { to: '/play', label: '播放', icon: 'play' },
     { to: '/search', label: '分类', icon: 'grid' },
     { to: '/library?tab=history', label: '历史', icon: 'clock', libraryTab: 'history' },
     { to: '/library?tab=favorites', label: '收藏', icon: 'star', libraryTab: 'favorites' },

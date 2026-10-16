@@ -150,10 +150,45 @@ function unwrap(value: unknown, ...keys: string[]): Record<string, any> {
 }
 
 function absoluteImage(value: string, origin = ''): string {
-  if (!value) return ''
-  if (value.startsWith('//')) return `https:${value}`
-  if (/^https?:\/\//i.test(value)) return value
-  return origin ? `${origin}${value.startsWith('/') ? '' : '/'}${value}` : value
+  const image = value.trim().replace(/&amp;/gi, '&')
+  if (!image) return ''
+  if (image.startsWith('//')) return `https:${image}`
+  if (/^(?:https?:|data:image\/)/i.test(image)) return image
+  return origin ? `${origin}${image.startsWith('/') ? '' : '/'}${image}` : image
+}
+
+function extractJianpianImage(value: unknown, depth = 0): string {
+  if (depth > 5 || value === null || value === undefined) return ''
+  if (typeof value === 'string') return value.trim()
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const image = extractJianpianImage(item, depth + 1)
+      if (image) return image
+    }
+    return ''
+  }
+  if (typeof value !== 'object') return ''
+  const image = asObject(value)
+  for (const key of [
+    'url', 'src', 'uri', 'image_url', 'img_url', 'thumb_url', 'poster_url', 'cover_url', 'original',
+    'large', 'big', 'full', 'full_url', 'thumb', 'thumbnail', 'tvimg', 'cover', 'poster', 'pic', 'img', 'image', 'path', 'value'
+  ]) {
+    const nested = extractJianpianImage(image[key], depth + 1)
+    if (nested) return nested
+  }
+  return ''
+}
+
+function jianpianPoster(raw: Record<string, any>): string {
+  for (const field of [
+    'poster_url', 'poster_path', 'cover_url', 'cover_pic', 'cover_img', 'video_cover', 'poster', 'cover',
+    'pic_url', 'small_pic', 'pic', 'image', 'image_url', 'image_path', 'img_url', 'thumb_url',
+    'thumb', 'thumbnail', 'tvimg', 'img', 'vod_img', 'vod_pic'
+  ]) {
+    const image = extractJianpianImage(raw[field])
+    if (image) return absoluteImage(image, JIANPIAN_IMAGE_ORIGIN)
+  }
+  return ''
 }
 
 function makeVod(raw: Record<string, any>, site: Site, kind: 'guazi' | 'jianpian'): Vod {
@@ -162,7 +197,7 @@ function makeVod(raw: Record<string, any>, site: Site, kind: 'guazi' | 'jianpian
     return {
       vod_id: id,
       vod_name: firstText(raw, 'title', 'name', 'original_name') || id,
-      vod_pic: absoluteImage(firstText(raw, 'thumbnail', 'tvimg', 'poster_url', 'cover_url'), JIANPIAN_IMAGE_ORIGIN),
+      vod_pic: jianpianPoster(raw),
       vod_remarks: firstText(raw, 'mask', 'remarks', 'badge', 'episodes_count'),
       vod_year: firstText(raw, 'year', 'release_year'),
       vod_area: firstText(raw, 'areas', 'area', 'region'),

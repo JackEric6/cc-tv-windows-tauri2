@@ -77,6 +77,33 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
       })
     }
   }
+  const controlBar = (player.getChild('controlBar') as any)?.el() as HTMLElement | undefined
+  if (controlBar) {
+    const pictureInPictureButton = controlBar.querySelector<HTMLElement>('.vjs-picture-in-picture-control')
+    const fullscreenButton = controlBar.querySelector<HTMLElement>('.vjs-fullscreen-control')
+    if (fullscreenButton) {
+      const alignRightControls = (): void => {
+        const pictureInPictureVisible = Boolean(pictureInPictureButton &&
+          pictureInPictureButton.offsetParent !== null &&
+          getComputedStyle(pictureInPictureButton).display !== 'none')
+        const fullscreenMargin = pictureInPictureVisible ? '' : 'auto'
+        if (fullscreenButton.style.marginLeft !== fullscreenMargin) {
+          fullscreenButton.style.marginLeft = fullscreenMargin
+        }
+        if (pictureInPictureButton) {
+          const pictureInPictureMargin = pictureInPictureVisible ? 'auto' : ''
+          if (pictureInPictureButton.style.marginLeft !== pictureInPictureMargin) {
+            pictureInPictureButton.style.marginLeft = pictureInPictureMargin
+          }
+        }
+      }
+      alignRightControls()
+      const observer = new MutationObserver(alignRightControls)
+      observer.observe(controlBar, { attributes: true, childList: true, subtree: true, attributeFilter: ['class', 'style'] })
+      player.ready(alignRightControls)
+      player.one('dispose', () => observer.disconnect())
+    }
+  }
   player.src({
     src: options.url,
     ...(isHls(options.url) || options.hls ? { type: 'application/x-mpegURL' }
