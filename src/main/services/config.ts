@@ -1,3 +1,4 @@
+import { createDecipheriv } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import type {
   ConfigSource,
@@ -8,7 +9,7 @@ import type {
   Site,
   SiteType
 } from '@shared/types'
-import { fetchJson } from './http'
+import { fetchText, parseLooseJson } from './http'
 
 /**
  * 配置解析层：同时吃 TVBox 兼容方言与本项目简洁方言。
@@ -44,13 +45,127 @@ function shortHash(input: string): string {
   return (h >>> 0).toString(36)
 }
 
-function normalizeApi(raw: string): string {
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function rightPad(value: string, length = 16): string {
+  return value.trim().slice(0, length).padEnd(length, '0')
+}
+
+function resolveConfigUrl(raw: string, baseUrl?: string): string {
+  const value = raw.trim()
+  if (!value) return ''
+  if (/^(?:proxy|file|assets|clan|to):\/\//i.test(value)) return value
+  try {
+    if (/^https?:\/\//i.test(value)) return new URL(value).href
+    if (baseUrl && /^(?:\.{0,2}\/|\/)/.test(value)) return new URL(value, baseUrl).href
+  } catch {
+    return value
+  }
+  return /^[^\s/]+\.[^\s/]+(?:\/|$)/u.test(value) ? `http://${value}` : value
+}
+
+function splitProtectedUrl(raw: string): { url: string; key?: string } {
+  const marker = raw.indexOf(';pk;')
+  if (marker < 0) return { url: raw }
+  const url = raw.slice(0, marker).trim()
+  const key = raw.slice(marker + 4).trim()
+  return { url, key: key || undefined }
+}
+
+function normalizeJar(raw: unknown, baseUrl?: string): string | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  const [target, ...suffix] = raw.trim().split(';')
+  const resolved = resolveConfigUrl(target, baseUrl)
+  return [resolved, ...suffix].filter(Boolean).join(';') || undefined
+}
+
+function decryptHexAes(hex: string, mode: 'ecb' | 'cbc', key: string, iv?: string): string {
+  const decipher = createDecipheriv(
+    mode === 'ecb' ? 'aes-128-ecb' : 'aes-128-cbc',
+    Buffer.from(rightPad(key), 'utf8'),
+    mode === 'ecb' ? null : Buffer.from(rightPad(iv ?? ''), 'utf8')
+  )
+  decipher.setAutoPadding(true)
+  return Buffer.concat([decipher.update(Buffer.from(hex, 'hex')), decipher.final()]).toString('utf8')
+}
+
+/** 对齐 TVBox ApiConfig.FindResult 的常见包装格式。 */
+function decodeTvboxPayload(text: string, configKey?: string): unknown {
+  const cleaned = text.replace(/^\uFEFF/, '').trim()
+  try {
+    return parseLooseJson(cleaned)
+  } catch {
+    // 某些配置先写入 8 个字符的标记，再把 JSON Base64 编码。
+    const marker = /[A-Za-z0-9]{8}\*\*/.exec(cleaned)
+    if (marker) {
+      const encoded = cleaned.slice(marker.index + marker[0].length).replace(/\s+/g, '')
+      try {
+        return parseLooseJson(Buffer.from(encoded, 'base64').toString('utf8'))
+      } catch {
+        // 继续尝试下面的 AES 兼容格式。
+      }
+    }
+
+    // TVBox 的 2423 格式：头部携带 key/iv，主体是十六进制密文。
+    if (cleaned.startsWith('2423')) {
+      const markerIndex = cleaned.indexOf('2324')
+      if (markerIndex >= 0 && cleaned.length > markerIndex + 4 + 26) {
+        const data = cleaned.slice(markerIndex + 4, -26)
+        const ascii = Buffer.from(cleaned, 'hex').toString('utf8').toLowerCase()
+        const keyStart = ascii.indexOf('$#')
+        const keyEnd = ascii.indexOf('#$', keyStart + 2)
+        if (keyStart >= 0 && keyEnd > keyStart) {
+          try {
+            return parseLooseJson(decryptHexAes(data, 'cbc', ascii.slice(keyStart + 2, keyEnd), ascii.slice(-13)))
+          } catch {
+            // 返回统一的格式错误，避免把密文当作站点 URL。
+          }
+        }
+      }
+    }
+
+    // URL 的 ;pk; 后缀是 TVBox 的 AES-ECB 配置约定。
+    if (configKey) {
+      try {
+        return parseLooseJson(decryptHexAes(cleaned.replace(/\s+/g, ''), 'ecb', configKey))
+      } catch {
+        // 由下面的统一错误提示收尾。
+      }
+    }
+  }
+  throw new Error('返回内容不是受支持的 TVBox JSON 配置')
+}
+
+function collectionUrl(raw: unknown, baseUrl: string): string | undefined {
+  if (!isRecord(raw) || Object.prototype.hasOwnProperty.call(raw, 'sites') || !Array.isArray(raw.urls)) {
+    return undefined
+  }
+  for (const item of raw.urls) {
+    const value = typeof item === 'string'
+      ? item
+      : isRecord(item) ? String(item.url ?? item.api ?? '') : ''
+    const url = resolveConfigUrl(value, baseUrl)
+    if (/^https?:\/\//i.test(url)) return url
+  }
+  return undefined
+}
+
+function normalizeApi(raw: string, baseUrl?: string): string {
   const api = (raw ?? '').trim()
   if (!api) return ''
   if (/^https?:\/\//i.test(api)) return api
-  if (/^(proxy|file|assets|clan|to)`?:\/\//i.test(api)) return api
+  if (/^(proxy|file|assets|clan|to):\/\//i.test(api)) return api
+  if (baseUrl && /^(?:\.{0,2}\/|\/)/.test(api)) {
+    try {
+      return new URL(api, baseUrl).href
+    } catch {
+      return api
+    }
+  }
   // 形如 cms1.example.com/api.php/provide/vod/ 的裸域名
-  if (/^[\w.-]+\.[a-z]{2,}/i.test(api)) return `https://${api}`
+  if (/^[^\s/]+\.[^\s/]+(?:\/|$)/u.test(api)) return `https://${api}`
   return api
 }
 
@@ -116,13 +231,15 @@ export interface SiteNormalizeContext {
   sourceId: string
   sourceName: string
   defaults?: { timeout?: number; header?: Record<string, string> }
+  /** 用于把 TVBox 配置中的相对接口地址解析成绝对地址。 */
+  baseUrl?: string
 }
 
 export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site | null {
   if (!input || typeof input !== 'object') return null
   const raw = input as Record<string, any>
   const name = String(raw.name ?? raw.title ?? '').trim()
-  const api = normalizeApi(String(raw.api ?? raw.url ?? raw.ext?.api ?? ''))
+  const api = normalizeApi(String(raw.api ?? raw.url ?? raw.ext?.api ?? ''), ctx.baseUrl)
   if (!name && !api) return null
 
   const rules = normalizeRules(raw.rules ?? raw.ext?.rules)
@@ -137,7 +254,7 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
     backupApi: Array.isArray(raw.backupApi) ? raw.backupApi.map(String).map((value: string) => value.trim()).filter(Boolean) : undefined,
     backupDomain: Array.isArray(raw.backupDomain) ? raw.backupDomain.map(String).map((value: string) => value.trim()).filter(Boolean) : undefined,
     ext: typeof raw.ext === 'string' ? raw.ext : raw.ext ? JSON.stringify(raw.ext) : undefined,
-    jar: typeof raw.jar === 'string' ? raw.jar : undefined,
+    jar: normalizeJar(raw.jar, ctx.baseUrl),
     searchable: flag(raw.searchable, true),
     homeEnabled: true,
     searchEnabled: flag(raw.searchable, true),
@@ -167,7 +284,7 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
     site.unsupported = '该站点依赖内置 Spider 或本地资源，桌面端无法直接请求'
     site.searchable = false
     site.quickSearch = false
-  } else if (type === 0) {
+  } else if (type === 0 || !/^https?:\/\//i.test(site.api)) {
     site.unsupported = '需要配套 Spider（jar/dex），桌面端无法运行'
     site.searchable = false
     site.quickSearch = false
@@ -184,13 +301,13 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
   return site
 }
 
-function normalizeParses(raw: unknown): ParseItem[] {
+function normalizeParses(raw: unknown, baseUrl?: string): ParseItem[] {
   if (!Array.isArray(raw)) return []
   return raw
     .map((item): ParseItem | null => {
       if (!item || typeof item !== 'object') return null
       const p = item as Record<string, any>
-      const url = String(p.url ?? '').trim()
+      const url = resolveConfigUrl(String(p.url ?? ''), baseUrl)
       if (!url) return null
       return {
         name: String(p.name ?? '未命名解析'),
@@ -216,7 +333,7 @@ function normalizeHeaderRules(raw: unknown): HeaderRule[] {
 
 /** 把任意一份配置 JSON 归一化成内部结构 */
 export function parseConfig(rawInput: unknown, ctx: SiteNormalizeContext): ParsedConfig {
-  const raw = (rawInput ?? {}) as Record<string, any>
+  const raw = isRecord(rawInput) ? rawInput : {}
   const ext = (raw.tvboxDesktop ?? {}) as Record<string, any>
   const settings = (raw.settings ?? {}) as Record<string, any>
 
@@ -243,7 +360,7 @@ export function parseConfig(rawInput: unknown, ctx: SiteNormalizeContext): Parse
     name: String(raw.name ?? ext.name ?? ctx.sourceName ?? '未命名配置'),
     notice: raw.notice ? String(raw.notice) : undefined,
     sites,
-    parses: normalizeParses(raw.parses),
+    parses: normalizeParses(raw.parses, ctx.baseUrl),
     flags: Array.isArray(raw.flags) ? raw.flags.map(String) : [],
     headers: normalizeHeaderRules(raw.headers ?? settings.headers),
     theme: (raw.theme ?? ext.theme) as ParsedConfig['theme'],
@@ -258,12 +375,28 @@ export async function loadConfigSource(
   source: Pick<ConfigSource, 'id' | 'name' | 'url' | 'kind'>,
   timeout = 20
 ): Promise<ParsedConfig> {
-  let json: unknown
-  if (source.kind === 'file') {
-    const text = await fs.readFile(source.url, 'utf-8')
-    json = JSON.parse(text.replace(/^\uFEFF/, ''))
-  } else {
-    json = await fetchJson(source.url, { timeout })
+  const visited = new Set<string>()
+  const load = async (rawUrl: string, kind: 'url' | 'file', depth: number): Promise<ParsedConfig> => {
+    const protectedUrl = splitProtectedUrl(rawUrl)
+    const baseUrl = resolveConfigUrl(protectedUrl.url)
+    const visitKey = `${kind}:${baseUrl};pk;${protectedUrl.key ?? ''}`
+    if (visited.has(visitKey)) throw new Error('配置链接存在循环引用')
+    if (depth > 4) throw new Error('配置链接嵌套层级超过 4 层')
+    visited.add(visitKey)
+
+    const text = kind === 'file' && depth === 0
+      ? await fs.readFile(protectedUrl.url, 'utf-8')
+      : await fetchText(baseUrl, { timeout })
+    const json = decodeTvboxPayload(text, protectedUrl.key)
+    const nextUrl = collectionUrl(json, baseUrl)
+    if (nextUrl) return load(nextUrl, 'url', depth + 1)
+    return parseConfig(json, {
+      sourceId: source.id,
+      sourceName: source.name,
+      defaults: { timeout },
+      baseUrl
+    })
   }
-  return parseConfig(json, { sourceId: source.id, sourceName: source.name, defaults: { timeout } })
+
+  return load(source.url, source.kind, 0)
 }
