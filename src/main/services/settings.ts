@@ -41,13 +41,23 @@ export async function getSettings(): Promise<AppSettings> {
   const stored = await readStore<Partial<AppSettings>>(NAME, {})
   const storedVersion = stored.settingsVersion ?? 0
   const needsMigration = storedVersion < 4
+  const storedConcurrency = Number(stored.concurrency)
+  const storedTimeout = Number(stored.timeout)
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...stored,
     settingsVersion: 4,
-    concurrency: storedVersion < 3 && stored.concurrency === 8 ? 10 : stored.concurrency ?? DEFAULT_SETTINGS.concurrency,
+    concurrency: storedVersion < 3 && stored.concurrency === 8
+      ? 10
+      : Number.isFinite(storedConcurrency)
+        ? Math.max(1, Math.min(32, Math.trunc(storedConcurrency)))
+        : DEFAULT_SETTINGS.concurrency,
     language: stored.language === 'en-US' ? 'en-US' : 'zh-CN',
-    timeout: storedVersion < 1 && stored.timeout === 20 ? 3 : stored.timeout ?? DEFAULT_SETTINGS.timeout,
+    timeout: storedVersion < 1 && stored.timeout === 20
+      ? 3
+      : Number.isFinite(storedTimeout)
+        ? Math.max(3, Math.min(120, Math.trunc(storedTimeout)))
+        : DEFAULT_SETTINGS.timeout,
     singleSourceTimeoutSeconds: Number.isFinite(stored.singleSourceTimeoutSeconds)
       ? Math.max(1, Math.min(10, Math.trunc(stored.singleSourceTimeoutSeconds ?? DEFAULT_SETTINGS.singleSourceTimeoutSeconds)))
       : DEFAULT_SETTINGS.singleSourceTimeoutSeconds,

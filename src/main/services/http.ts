@@ -78,7 +78,8 @@ function detectEncoding(buffer: Buffer, contentType: string, forced?: string): s
 }
 
 export async function request(url: string, options: RequestOptions = {}): Promise<RawResponse> {
-  const timeoutMs = (options.timeout ?? 20) * 1000
+  const timeoutSeconds = Number(options.timeout ?? 20)
+  const timeoutMs = Math.max(1, Number.isFinite(timeoutSeconds) ? timeoutSeconds : 20) * 1000
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const abortFromParent = (): void => controller.abort()
