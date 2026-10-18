@@ -154,7 +154,12 @@ function absoluteImage(value: string, origin = ''): string {
   if (!image) return ''
   if (image.startsWith('//')) return `https:${image}`
   if (/^(?:https?:|data:image\/)/i.test(image)) return image
-  return origin ? `${origin}${image.startsWith('/') ? '' : '/'}${image}` : image
+  if (!origin) return image
+  try {
+    return new URL(image, `${origin.replace(/\/$/, '')}/`).toString()
+  } catch {
+    return `${origin}${image.startsWith('/') ? '' : '/'}${image}`
+  }
 }
 
 function extractJianpianImage(value: unknown, depth = 0): string {
@@ -216,7 +221,7 @@ function makeVod(raw: Record<string, any>, site: Site, kind: 'guazi' | 'jianpian
   return {
     vod_id: id,
     vod_name: get('vod_name', 'd_name', 'c_name', 'name', 'title', 'vod_title') || id,
-    vod_pic: absoluteImage(get('vod_pic', 'd_pic', 'c_pic', 'pic')),
+    vod_pic: absoluteImage(get('vod_pic', 'd_pic', 'c_pic', 'pic'), GUAZI_ORIGIN),
     vod_remarks: get('new_continue', 'vod_remarks', 'vod_title', 'cf_name', 'sub_title'),
     vod_year: get('vod_year', 'd_year', 'year'),
     vod_area: get('vod_area', 'd_area', 'area', 'region'),

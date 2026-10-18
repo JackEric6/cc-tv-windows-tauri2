@@ -64,6 +64,24 @@ export function absolutize(url: string, base: string): string {
   }
 }
 
+/**
+ * 苹果 CMS 的图片字段通常是站点根目录下的相对路径（例如
+ * `upload/vod/2026/example.jpg`），不能以 `/api.php/provide/vod/` 这类
+ * 接口路径为基准，否则切换首页源后会生成不存在的图片地址。
+ */
+export function absolutizeCmsImage(url: string, api: string): string {
+  const value = (url ?? '').trim()
+  if (!value) return ''
+  if (/^(?:https?:|data:image\/)/i.test(value)) return value
+  if (value.startsWith('//')) return `https:${value}`
+  try {
+    const origin = new URL(api).origin
+    return new URL(value, `${origin}/`).toString()
+  } catch {
+    return absolutize(value, api)
+  }
+}
+
 function readArg($: CheerioAPI, el: Selection, arg: string, base: string): string {
   const key = arg.trim()
   const lower = key.toLowerCase()

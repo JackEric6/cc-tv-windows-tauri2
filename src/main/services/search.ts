@@ -3,7 +3,7 @@ import type { SearchOptions, SearchResponse, Site, SiteSearchResult, Vod } from 
 import { normalizeSearchTitle } from '@shared/searchMatch'
 import { asArray, buildCmsUrl, cmsApiCandidates, cmsRefererForApi, isCmsOk } from './cms'
 import { fetchText, parseLooseJson } from './http'
-import { absolutize, extract } from './htmlRules'
+import { absolutizeCmsImage, extract } from './htmlRules'
 import { getSettings } from './settings'
 import { getSites, resolveHeader } from './sites'
 import { searchCongcongSource } from './congcongSources'
@@ -145,7 +145,7 @@ export function cmsItemToVod(raw: Record<string, unknown>, site: Site): Vod {
   return {
     vod_id: s(raw.vod_id ?? raw.id),
     vod_name: s(raw.vod_name ?? raw.name),
-    vod_pic: absolutize(s(raw.vod_pic ?? raw.pic), site.api),
+    vod_pic: absolutizeCmsImage(s(raw.vod_pic ?? raw.pic), site.api),
     vod_remarks: s(raw.vod_remarks ?? raw.remarks),
     vod_year: s(raw.vod_year ?? raw.year),
     vod_area: s(raw.vod_area ?? raw.area),

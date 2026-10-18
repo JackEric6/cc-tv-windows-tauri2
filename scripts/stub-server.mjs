@@ -83,7 +83,8 @@ export const CMS_ITEMS = [
   {
     vod_id: 1,
     vod_name: '自检影片甲',
-    vod_pic: POSTER_1,
+    // CMS 真实接口常返回站点根目录下的相对图片路径，用它覆盖首页、搜索和详情链路。
+    vod_pic: 'poster-1.svg',
     vod_remarks: '更新至 03',
     vod_year: '2024',
     type_name: '自检剧'
@@ -91,7 +92,7 @@ export const CMS_ITEMS = [
   {
     vod_id: 2,
     vod_name: '自检影片乙',
-    vod_pic: POSTER_2,
+    vod_pic: 'poster-2.svg',
     vod_remarks: '完结',
     vod_year: '2023',
     type_name: '自检片'
