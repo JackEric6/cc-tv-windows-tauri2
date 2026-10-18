@@ -5,10 +5,21 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '将本次构建资产上传到 Release'
+        required: true
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release 标签；留空时使用 package.json 版本'
+        required: false
+        type: string
+        default: ''
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -71,8 +82,22 @@ jobs:
           }
 
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: cc-tv-windows-tauri2-release-assets
           path: src-tauri/target/release/bundle/release-assets/*
           if-no-files-found: error
           retention-days: 1
+
+      - name: Publish release assets
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release == true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = '${{ inputs.release_tag }}'.Trim()
+          if (-not $tag) { $tag = $version }
+          $assets = Get-ChildItem 'src-tauri/target/release/bundle/release-assets/*' | ForEach-Object { $_.FullName }
+          if (-not $assets) { throw '没有可上传的 Release 资产' }
+          gh release upload $tag @assets --repo '${{ github.repository }}' --clobber
