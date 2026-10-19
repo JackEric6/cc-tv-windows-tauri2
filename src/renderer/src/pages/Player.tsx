@@ -841,7 +841,9 @@ export function Player({
     const previewPlayer = previewPlayerRef.current
     if (!previewPlayer || previewPlayer.isDisposed() || previewPlayer.readyState() < 1) return
     try {
-      previewPlayer.currentTime(seconds)
+      const media = previewPlayer.tech(true)?.el() as HTMLMediaElement | undefined
+      if (media && typeof media.fastSeek === 'function') media.fastSeek(seconds)
+      else previewPlayer.currentTime(seconds)
     } catch {
       // Some encrypted streams do not support seeking in a second player.
     }
@@ -851,20 +853,21 @@ export function Player({
     previewSeekTargetRef.current = seconds
     setPreviewFrameReady(false)
     const elapsed = performance.now() - previewSeekedAtRef.current
+    const seekInterval = 100
     const run = (): void => {
       previewSeekTimerRef.current = undefined
       previewSeekedAtRef.current = performance.now()
       seekPreviewFrame(previewSeekTargetRef.current)
     }
 
-    if (elapsed >= 50) {
+    if (elapsed >= seekInterval) {
       if (previewSeekTimerRef.current !== undefined) {
         window.clearTimeout(previewSeekTimerRef.current)
         previewSeekTimerRef.current = undefined
       }
       run()
     } else if (previewSeekTimerRef.current === undefined) {
-      previewSeekTimerRef.current = window.setTimeout(run, 50 - elapsed)
+      previewSeekTimerRef.current = window.setTimeout(run, seekInterval - elapsed)
     }
   }, [seekPreviewFrame])
 

@@ -28,7 +28,7 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
     autoplay: options.autoplay ?? !options.preview,
     bigPlayButton: options.bigPlayButton ?? !options.preview,
     muted: Boolean(options.preview),
-    preload: 'auto',
+    preload: options.preview ? 'metadata' : 'auto',
     responsive: true,
     fluid: false,
     userActions: { doubleClick: false },
@@ -48,7 +48,8 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
       vhs: {
         overrideNative: true,
         enableLowInitialPlaylist: true,
-        useBandwidthFromLocalStorage: true
+        useBandwidthFromLocalStorage: !options.preview,
+        ...(options.preview ? { bandwidth: 600_000 } : {})
       }
     } as any
   })
