@@ -1397,7 +1397,7 @@
 
 .player-stage .video-js .vjs-play-progress,
 .player-stage .video-js .vjs-volume-level {
-  background-color: var(--video-accent, #2563EB);
+  background-color: var(--video-accent, #6A3DE8);
 }
 
 .player-stage .video-js .vjs-control-bar {
@@ -1498,7 +1498,7 @@
 }
 
 .player-pin-toggle.active {
-  color: var(--accent, #2563eb);
+  color: var(--accent, #6a3de8);
 }
 
 .player-stage .video-js .vjs-control-bar {
@@ -1687,7 +1687,7 @@
 }
 
 .player-stage:not(.is-fullscreen) .video-js.vjs-theme-city .vjs-fullscreen-control:hover {
-  background: color-mix(in srgb, var(--video-accent, #2563EB) 28%, transparent);
+  background: color-mix(in srgb, var(--video-accent, #6A3DE8) 28%, transparent);
   color: #fff;
 }
 
@@ -1706,7 +1706,7 @@
 }
 
 .player-stage .video-js .vjs-play-progress {
-  background-color: var(--video-accent, #2563EB);
+  background-color: var(--video-accent, #6A3DE8);
 }
 
 .player-stage .video-js .vjs-play-progress::before {
@@ -1718,7 +1718,7 @@
   height: 10px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--video-accent, #2563EB) 35%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--video-accent, #6A3DE8) 35%, transparent);
   transform: translateY(-50%);
 }
 
@@ -1751,8 +1751,8 @@
 }
 
 .player-stage .video-js .vjs-big-play-button:hover {
-  border-color: var(--video-accent, #2563EB);
-  background: color-mix(in srgb, var(--video-accent, #2563EB) 36%, rgba(10, 14, 20, .84));
+  border-color: var(--video-accent, #6A3DE8);
+  background: color-mix(in srgb, var(--video-accent, #6A3DE8) 36%, rgba(10, 14, 20, .84));
   transform: translate(-50%, -50%) scale(1.06);
 }
 
@@ -1912,7 +1912,7 @@
 .player-fullscreen-mini-progress::-webkit-slider-runnable-track {
   height: 2px;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--video-accent, #2563EB) var(--progress), rgba(255, 255, 255, .28) var(--progress));
+  background: linear-gradient(90deg, var(--video-accent, #6A3DE8) var(--progress), rgba(255, 255, 255, .28) var(--progress));
 }
 
 .player-fullscreen-mini-progress::-webkit-slider-thumb {
@@ -1934,7 +1934,7 @@
 .player-fullscreen-mini-progress::-moz-range-progress {
   height: 2px;
   border-radius: 999px;
-  background: var(--video-accent, #2563EB);
+  background: var(--video-accent, #6A3DE8);
 }
 
 .player-fullscreen-mini-progress::-moz-range-thumb {
@@ -2221,8 +2221,8 @@
 
 .fullscreen-episode-menu button:hover,
 .fullscreen-episode-menu button.active {
-  border-color: var(--video-accent, #2563EB);
-  background: color-mix(in srgb, var(--video-accent, #2563EB) 28%, rgba(255, 255, 255, .06));
+  border-color: var(--video-accent, #6A3DE8);
+  background: color-mix(in srgb, var(--video-accent, #6A3DE8) 28%, rgba(255, 255, 255, .06));
 }
 
 .fullscreen-exit {

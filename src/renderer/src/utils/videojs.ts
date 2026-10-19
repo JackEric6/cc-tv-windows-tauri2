@@ -20,8 +20,8 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
   video.setAttribute('playsinline', 'true')
   video.setAttribute('crossorigin', 'anonymous')
   container.replaceChildren(video)
-  container.style.setProperty('--video-accent', options.accent ?? '#2563EB')
-  container.style.setProperty('--vjs-theme-city--primary', options.accent ?? '#2563EB')
+  container.style.setProperty('--video-accent', options.accent ?? '#6A3DE8')
+  container.style.setProperty('--vjs-theme-city--primary', options.accent ?? '#6A3DE8')
 
   const player = videojs(video, {
     controls: !options.preview,

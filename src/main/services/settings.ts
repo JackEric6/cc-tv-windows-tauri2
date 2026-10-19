@@ -13,7 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   useSystemProxy: false,
   userAgent: DEFAULT_UA,
   theme: 'light',
-  accent: '#2563EB',
+  accent: '#6A3DE8',
   density: 'compact',
   sidebarCollapsed: false,
   homeSourceKey: 'guazi',

@@ -23,10 +23,10 @@
   --text-4: #b8bcc3;
 
   /* 强调色（设置里可改） */
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-soft: #eff4ff;
-  --accent-border: #d3e0ff;
+  --accent: #6a3de8;
+  --accent-hover: #5527cc;
+  --accent-soft: #f1ecff;
+  --accent-border: #ded2ff;
 
   /* 语义色 */
   --success: #16a34a;
@@ -114,8 +114,8 @@
   --text-2: #c7cdd5;
   --text-3: #98a1ac;
   --text-4: #737e89;
-  --accent-soft: #1a3158;
-  --accent-border: #284d80;
+  --accent-soft: #2c2050;
+  --accent-border: #513b84;
   --success-soft: #173426;
   --warn-soft: #3a2b17;
   --danger-soft: #3d2023;

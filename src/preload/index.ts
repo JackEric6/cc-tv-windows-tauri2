@@ -48,6 +48,10 @@ const api = {
   window: {
     setAlwaysOnTop: (enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.windowAlwaysOnTop, enabled)
   },
+  feedback: {
+    submit: (content: string, version: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.feedbackSubmit, content, version)
+  },
 
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsGet),

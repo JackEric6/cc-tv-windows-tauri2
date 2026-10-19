@@ -27,6 +27,7 @@ import { resolveEpisodeForPlayer } from '../main/services/playback'
 import { cancelDanmaku, loadDanmaku, searchDanmaku } from '../main/services/danmaku'
 import { closeMediaProxy } from '../main/services/mediaProxy'
 import { checkForUpdate, downloadUpdate } from '../main/services/updater'
+import { submitFeedback } from '../main/services/feedback'
 import {
   addOfflineTask, cancelOfflineTask, deleteOfflineTask, getOfflinePlayback,
   listOfflineTasks, pauseOfflineTask, retryOfflineTask
@@ -42,7 +43,7 @@ function register(channel: string, handler: Handler): void {
 
 function registerHandlers(): void {
   register(IPC.appInfo, () => ({
-    version: process.env['CCTV_APP_VERSION'] || '1.0.24',
+    version: process.env['CCTV_APP_VERSION'] || '1.0.25',
     webview2: 'Evergreen',
     node: process.versions.node,
     platform: `${process.platform} ${process.arch}`,
@@ -53,6 +54,7 @@ function registerHandlers(): void {
   register(IPC.updateDownload, (version: string) => downloadUpdate(version, (downloaded, total) => {
     emitBackendEvent(IPC.updateDownloadProgress, { downloaded, total })
   }))
+  register(IPC.feedbackSubmit, (content: string, version: string) => submitFeedback(content, version))
 
   register(IPC.settingsGet, () => getSettings())
   register(IPC.settingsSet, async (patch: Partial<AppSettings>) => {

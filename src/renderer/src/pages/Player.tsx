@@ -24,7 +24,7 @@ const FULLSCREEN_CONTROL_HOVER_HEIGHT = 112
 const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
-const PREVIEW_FRAME_INTERVAL_SECONDS = 5
+const PREVIEW_FRAME_INTERVAL_SECONDS = 20
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -580,17 +580,45 @@ export function Player({
       let stablePlaybackTimer: number | undefined
       let scanSeekTimer: number | undefined
       let scanSeekListener: (() => void) | undefined
+      const previewScannedTargets = new Set<number>()
+      const previewScanFailures = new Map<number, number>()
+      let activePreviewScanTarget = 0
       const stopPreviewScan = (): void => {
         previewScanStopped = true
         if (previewScanTimer !== undefined) window.clearTimeout(previewScanTimer)
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
         const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
-        if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+        if (media && scanSeekListener) {
+          media.removeEventListener('seeked', scanSeekListener)
+          media.removeEventListener('loadeddata', scanSeekListener)
+        }
         previewScanPlayer?.dispose()
         previewScanPlayer = null
         previewScanHost?.remove()
         previewScanHost = null
+      }
+      const restartPreviewScanPlayer = (failedTarget = activePreviewScanTarget): void => {
+        if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
+        scanSeekTimer = undefined
+        const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
+        if (media && scanSeekListener) {
+          media.removeEventListener('seeked', scanSeekListener)
+          media.removeEventListener('loadeddata', scanSeekListener)
+        }
+        scanSeekListener = undefined
+        previewScanPlayer?.dispose()
+        previewScanPlayer = null
+        previewScanHost?.remove()
+        previewScanHost = null
+        const failures = (previewScanFailures.get(failedTarget) ?? 0) + 1
+        previewScanFailures.set(failedTarget, failures)
+        if (failures >= 3) {
+          previewScannedTargets.add(failedTarget)
+          schedulePreviewScan(200)
+        } else {
+          schedulePreviewScan(1500)
+        }
       }
       stopPreviewScanForPlayer = stopPreviewScan
       const schedulePreviewScan = (delay = 350): void => {
@@ -601,8 +629,8 @@ export function Player({
         }, delay)
       }
       const scanNextPreviewFrame = (): void => {
-        if (previewScanStopped || !visibleRef.current) return
-        if (player.paused() || previewHoveringRef.current || player.isDisposed()) {
+        if (previewScanStopped || player.isDisposed()) return
+        if (!visibleRef.current || previewHoveringRef.current) {
           schedulePreviewScan(900)
           return
         }
@@ -612,17 +640,20 @@ export function Player({
           return
         }
         let target = 0
-        while (target < duration && previewFramesRef.current.has(target)) target += PREVIEW_FRAME_INTERVAL_SECONDS
+        while (target < duration && (previewFramesRef.current.has(target) || previewScannedTargets.has(target))) {
+          target += PREVIEW_FRAME_INTERVAL_SECONDS
+        }
         if (target >= duration) {
           stopPreviewScan()
           return
         }
+        activePreviewScanTarget = target
         if (!previewScanPlayer) {
           previewScanHost = document.createElement('div')
           previewScanHost.style.cssText = 'position:fixed;left:-10000px;top:0;width:160px;height:90px;opacity:0;pointer-events:none;overflow:hidden'
           document.body.appendChild(previewScanHost)
           previewScanPlayer = createVideoPlayer(previewScanHost, { url, accent: settings?.accent, hls, preview: true })
-          previewScanPlayer.on('error', stopPreviewScan)
+          previewScanPlayer.on('error', restartPreviewScanPlayer)
         }
         const scanPlayer = previewScanPlayer
         const media = scanPlayer.tech(true)?.el() as HTMLVideoElement | undefined
@@ -632,7 +663,10 @@ export function Player({
         }
         const frameReady = (): void => {
           if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
-          if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+          if (media && scanSeekListener) {
+            media.removeEventListener('seeked', scanSeekListener)
+            media.removeEventListener('loadeddata', scanSeekListener)
+          }
           scanSeekTimer = undefined
           scanSeekListener = undefined
           if (previewScanStopped || !previewScanPlayer || media.readyState < 2) {
@@ -640,20 +674,26 @@ export function Player({
             return
           }
           cachePreviewFrame(previewFramesRef.current, media, Number(scanPlayer.currentTime()) || target, target)
+          previewScannedTargets.add(target)
+          previewScanFailures.delete(target)
           schedulePreviewScan()
         }
         const current = Number(scanPlayer.currentTime()) || 0
-        if (Math.abs(current - target) < 0.25 && media.readyState >= 2) {
-          frameReady()
+        if (Math.abs(current - target) < 0.25) {
+          if (media.readyState >= 2) frameReady()
+          else schedulePreviewScan(700)
           return
         }
         scanSeekListener = frameReady
         media.addEventListener('seeked', frameReady, { once: true })
         scanSeekTimer = window.setTimeout(() => {
-          if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+          if (media && scanSeekListener) {
+            media.removeEventListener('seeked', scanSeekListener)
+            media.removeEventListener('loadeddata', scanSeekListener)
+          }
           scanSeekTimer = undefined
           scanSeekListener = undefined
-          stopPreviewScan()
+          restartPreviewScanPlayer(target)
         }, 10_000)
         seekVideoPlayer(scanPlayer, target)
       }

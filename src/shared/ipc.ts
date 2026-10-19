@@ -6,6 +6,7 @@ export const IPC = {
   updateDownload: 'app:update-download',
   updateDownloadProgress: 'app:update-download-progress',
   updateInstall: 'app:update-install',
+  feedbackSubmit: 'feedback:submit',
   windowAlwaysOnTop: 'window:always-on-top',
 
   settingsGet: 'settings:get',

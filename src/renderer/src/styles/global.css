@@ -202,12 +202,7 @@ textarea {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-s);
-  background: linear-gradient(135deg, var(--accent), #60a5fa);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  font-weight: 700;
+  background: url('/app-icon.png') center / cover no-repeat;
   flex-shrink: 0;
 }
 
