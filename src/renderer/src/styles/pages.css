@@ -2040,9 +2040,9 @@
   max-height: min(80vh, 620px);
   overflow: auto;
   padding: 22px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: var(--radius-l);
-  background: var(--surface);
+  background: var(--bg);
   box-shadow: var(--shadow-3);
 }
 
