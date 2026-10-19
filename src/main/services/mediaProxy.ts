@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { extname, join, relative, resolve, sep } from 'node:path'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { app, networkFetch } from '../../tauri/platform'
@@ -32,13 +33,14 @@ type ProxyResponse = Readable & {
 async function fetchUpstream(
   url: string,
   method: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  signal: AbortSignal
 ): Promise<{ response: ProxyResponse; finalUrl: string }> {
   const upstream = await networkFetch(url, {
     method,
     headers: normalizeRequestHeaders(headers),
     redirect: 'follow',
-    signal: AbortSignal.timeout(30000)
+    signal: AbortSignal.any([signal, AbortSignal.timeout(30000)])
   })
   const stream = upstream.body
     ? Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>)
@@ -94,7 +96,11 @@ async function listen(): Promise<void> {
           })
           const range = request.headers.range
           if (range) headers.Range = range
-          const { response: upstream, finalUrl } = await fetchUpstream(target.href, method, headers)
+          const upstreamRequest = new AbortController()
+          response.once('close', () => {
+            if (!response.writableEnded) upstreamRequest.abort()
+          })
+          const { response: upstream, finalUrl } = await fetchUpstream(target.href, method, headers, upstreamRequest.signal)
           response.statusCode = upstream.statusCode ?? 502
           for (const name of ['accept-ranges', 'content-length', 'content-range', 'content-type', 'last-modified', 'etag']) {
             const value = upstream.headers[name]
@@ -125,15 +131,15 @@ async function listen(): Promise<void> {
             response.end()
             return
           }
-          upstream.on('data', (chunk) => response.write(chunk))
-          upstream.on('end', () => response.end())
-          upstream.on('error', () => response.destroy())
+          await pipeline(upstream, response)
         } catch (error) {
           if (!response.headersSent) {
             response.statusCode = 502
             response.setHeader('Content-Type', 'text/plain; charset=utf-8')
+            response.end((error as Error).message)
+          } else if (!response.destroyed) {
+            response.destroy(error as Error)
           }
-          response.end((error as Error).message)
         }
       })
       server.once('error', reject)
