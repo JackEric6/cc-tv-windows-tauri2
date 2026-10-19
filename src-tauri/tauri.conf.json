@@ -31,7 +31,8 @@
     "icon": ["../build/icon.ico", "../build/icon.png"],
     "resources": {
       "../dist/backend.cjs": "backend.cjs",
-      "resources/node.exe": "node.exe"
+      "resources/node.exe": "node.exe",
+      "../build/new_ico/cc-tv-windows-icon-1.0.25.ico": "cc-tv-windows-icon-1.0.25.ico"
     },
     "windows": {
       "webviewInstallMode": {
@@ -40,7 +41,8 @@
       },
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["SimpChinese"]
+        "languages": ["SimpChinese"],
+        "installerHooks": "./windows/installer-hooks.nsh"
       }
     }
   }
