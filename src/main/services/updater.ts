@@ -9,7 +9,10 @@ import { networkFetch } from './http'
 
 const REPOSITORY = 'JackEric6/cc-tv-windows-tauri2'
 const GITHUB_API_PROXY = 'https://gh-proxy.com/https://api.github.com'
-const GITHUB_RELEASE_PROXY = 'https://ghproxy.net/https://github.com'
+const GITHUB_RELEASE_PROXIES = [
+  'https://gh-proxy.com/https://github.com',
+  'https://ghfast.top/https://github.com'
+]
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 
 interface GitHubRelease {
@@ -31,6 +34,20 @@ function compareVersions(left: string, right: string): number {
     if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1
   }
   return 0
+}
+
+async function fetchReleaseAsset(urls: string[]): Promise<Response> {
+  let lastError: Error | undefined
+  for (const url of urls) {
+    try {
+      const response = await networkFetch(url, { signal: AbortSignal.timeout(10 * 60_000) })
+      if (response.ok) return response
+      lastError = new Error(`HTTP ${response.status}`)
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+    }
+  }
+  throw new Error(`所有 GitHub 加速下载地址均失败：${lastError?.message ?? '未知错误'}`)
 }
 
 async function getLatestRelease(): Promise<{ currentVersion: string; latestVersion: string; notes: string; assetName: string; assetSize: number; digest: string }> {
@@ -78,8 +95,8 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   }
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
-  const downloadUrl = `${GITHUB_RELEASE_PROXY}/${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
-  const response = await networkFetch(downloadUrl, { signal: AbortSignal.timeout(10 * 60_000) })
+  const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
+  const response = await fetchReleaseAsset(GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`))
   if (!response.ok || !response.body) throw new Error(`下载更新失败：HTTP ${response.status}`)
   const contentLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(contentLength) && contentLength !== release.assetSize) {
