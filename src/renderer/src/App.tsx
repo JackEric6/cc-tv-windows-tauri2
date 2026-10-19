@@ -22,6 +22,9 @@ export default function App(): JSX.Element {
   const navigationType = useNavigationType()
   const routeState = location.state as { autoPlay?: unknown } | null
   const [lastPlayerLocation, setLastPlayerLocation] = useState<ReturnType<typeof useLocation> | null>(null)
+  const [updatePrompt, setUpdatePrompt] = useState<{ version: string; currentVersion: string; notes: string } | null>(null)
+  const [updateInstalling, setUpdateInstalling] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState({ downloaded: 0, total: 0 })
   const isPlayerRoute = Boolean(matchPath('/play/:siteKey/:vodId/:lineIndex/:epIndex', location.pathname))
   const clearCachedPlayer = (location.state as { clearPlayer?: unknown } | null)?.clearPlayer === true
   const restorePlayerFromTab = location.pathname === '/play' && Boolean(lastPlayerLocation) && !clearCachedPlayer
@@ -44,11 +47,11 @@ export default function App(): JSX.Element {
         try {
           const update = await window.api.updater.check()
           if (!update.hasUpdate) return
-          const notes = update.notes ? `\n\n${update.notes.slice(0, 1600)}` : ''
-          if (!window.confirm(`检测到新版本 v${update.latestVersion}，当前版本 v${update.currentVersion}。现在下载并安装吗？${notes}`)) return
-          notify(`正在下载 v${update.latestVersion} 更新包…`, 'info')
-          const installer = await window.api.updater.download(update.latestVersion)
-          await window.api.updater.install(installer)
+          setUpdatePrompt({
+            version: update.latestVersion,
+            currentVersion: update.currentVersion,
+            notes: update.notes.slice(0, 1600)
+          })
         } catch (error) {
           console.warn('[updater] 自动检查更新失败', error)
         }
@@ -56,6 +59,8 @@ export default function App(): JSX.Element {
     }, 3000)
     return () => window.clearTimeout(timer)
   }, [notify])
+
+  useEffect(() => window.api.updater.onDownloadProgress(setUpdateProgress), [])
 
   useEffect(() => {
     if (isPlayerRoute) setLastPlayerLocation(location)
@@ -75,6 +80,21 @@ export default function App(): JSX.Element {
   }
 
   const noSources = sources.length === 0
+
+  async function installUpdate(): Promise<void> {
+    if (!updatePrompt || updateInstalling) return
+    setUpdateInstalling(true)
+    setUpdateProgress({ downloaded: 0, total: 0 })
+    try {
+      notify(`正在下载 v${updatePrompt.version} 更新包…`, 'info')
+      const installer = await window.api.updater.download(updatePrompt.version)
+      await window.api.updater.install(installer)
+    } catch (error) {
+      notify(`更新失败：${(error as Error).message}`, 'danger')
+      setUpdateInstalling(false)
+      setUpdatePrompt(null)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -108,6 +128,34 @@ export default function App(): JSX.Element {
         </main>
       </div>
       <Toasts />
+      {updatePrompt ? (
+        <div className="update-prompt-backdrop">
+          <section className="update-prompt" role="dialog" aria-modal="true" aria-labelledby="update-prompt-title">
+            <div className="update-prompt-heading">
+              <Icon name="refresh" size={19} />
+              <h2 id="update-prompt-title">发现新版本 v{updatePrompt.version}</h2>
+            </div>
+            <p className="text-3">当前版本 v{updatePrompt.currentVersion}。是否现在下载并安装更新？</p>
+            {updatePrompt.notes ? <pre className="update-prompt-notes">{updatePrompt.notes}</pre> : null}
+            {updateInstalling ? (
+              <div className="update-progress">
+                <div className="update-progress-label">
+                  <span>正在下载更新</span>
+                  <span>{updateProgress.total > 0 ? `${Math.min(100, Math.floor(updateProgress.downloaded / updateProgress.total * 100))}%` : '准备中…'}</span>
+                </div>
+                <progress max={updateProgress.total || 1} value={updateProgress.downloaded} />
+                {updateProgress.total > 0 ? <div className="field-hint">{(updateProgress.downloaded / 1048576).toFixed(1)} / {(updateProgress.total / 1048576).toFixed(1)} MB</div> : null}
+              </div>
+            ) : null}
+            <div className="update-prompt-actions">
+              <button type="button" className="btn" disabled={updateInstalling} onClick={() => setUpdatePrompt(null)}>稍后</button>
+              <button type="button" className="btn btn-primary" disabled={updateInstalling} onClick={() => void installUpdate()}>
+                {updateInstalling ? <><span className="spin" />{updateProgress.total > 0 && updateProgress.downloaded >= updateProgress.total ? '正在校验…' : '正在下载…'}</> : '立即更新'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

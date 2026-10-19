@@ -421,14 +421,52 @@ pub fn run() {
             if let Some(pending) = app_handle.try_state::<PendingInstaller>() {
                 if let Ok(mut installer) = pending.0.lock() {
                     if let Some(path) = installer.take() {
-                        let mut command = Command::new(path);
-                        command.arg("/S").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
                         #[cfg(windows)]
                         {
                             use std::os::windows::process::CommandExt;
-                            command.creation_flags(0x08000000);
+                            let script_path = std::env::temp_dir().join(format!(
+                                "cc-tv-update-{}.ps1",
+                                uuid::Uuid::new_v4().simple()
+                            ));
+                            let script = r#"$installer = $args[0]
+$scriptPath = $args[1]
+try {
+  $result = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+  Add-Type -AssemblyName System.Windows.Forms
+  if ($result.ExitCode -eq 0) {
+    [System.Windows.Forms.MessageBox]::Show('更新已安装完成。', '丛丛影视', 'OK', 'Information') | Out-Null
+  } else {
+    [System.Windows.Forms.MessageBox]::Show("更新安装失败，错误代码：$($result.ExitCode)", '丛丛影视', 'OK', 'Error') | Out-Null
+  }
+} catch {
+  Add-Type -AssemblyName System.Windows.Forms
+  [System.Windows.Forms.MessageBox]::Show("更新安装失败：$($_.Exception.Message)", '丛丛影视', 'OK', 'Error') | Out-Null
+} finally {
+  Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+}"#;
+                            let mut script_contents = vec![0xEF, 0xBB, 0xBF];
+                            script_contents.extend_from_slice(script.as_bytes());
+                            if fs::write(&script_path, script_contents).is_ok() {
+                                let mut command = Command::new("powershell.exe");
+                                command
+                                    .args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File"])
+                                    .arg(&script_path)
+                                    .arg(&path)
+                                    .arg(&script_path)
+                                    .stdin(Stdio::null())
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .creation_flags(0x08000000);
+                                if command.spawn().is_err() {
+                                    let _ = fs::remove_file(&script_path);
+                                }
+                            }
                         }
-                        let _ = command.spawn();
+                        #[cfg(not(windows))]
+                        {
+                            let _ = Command::new(path).arg("/S").spawn();
+                        }
                     }
                 }
             }

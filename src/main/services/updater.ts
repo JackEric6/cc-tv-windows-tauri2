@@ -3,7 +3,7 @@ import { open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { createHash, randomUUID } from 'node:crypto'
 import { networkFetch } from './http'
 
@@ -69,7 +69,7 @@ export async function checkForUpdate(): Promise<{ currentVersion: string; latest
   }
 }
 
-export async function downloadUpdate(version: string): Promise<string> {
+export async function downloadUpdate(version: string, onProgress: (downloaded: number, total: number) => void): Promise<string> {
   const release = await getLatestRelease()
   if (version !== release.latestVersion || compareVersions(release.latestVersion, release.currentVersion) <= 0) {
     throw new Error('更新版本已变化，请重新检查更新')
@@ -84,7 +84,19 @@ export async function downloadUpdate(version: string): Promise<string> {
     throw new Error(`安装包大小不匹配：预期 ${release.assetSize} 字节，收到 ${contentLength} 字节`)
   }
   try {
-    await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), createWriteStream(outputPath, { flags: 'w' }))
+    let downloaded = 0
+    const progress = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        downloaded += chunk.length
+        onProgress(downloaded, release.assetSize)
+        callback(null, chunk)
+      }
+    })
+    await pipeline(
+      Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+      progress,
+      createWriteStream(outputPath, { flags: 'w' })
+    )
     const file = await open(outputPath, 'r')
     try {
       const signature = Buffer.alloc(2)

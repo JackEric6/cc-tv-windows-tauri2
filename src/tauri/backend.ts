@@ -27,7 +27,6 @@ import { resolveEpisodeForPlayer } from '../main/services/playback'
 import { cancelDanmaku, loadDanmaku, searchDanmaku } from '../main/services/danmaku'
 import { closeMediaProxy } from '../main/services/mediaProxy'
 import { checkForUpdate, downloadUpdate } from '../main/services/updater'
-import { submitFeedback } from '../main/services/feedback'
 import {
   addOfflineTask, cancelOfflineTask, deleteOfflineTask, getOfflinePlayback,
   listOfflineTasks, pauseOfflineTask, retryOfflineTask
@@ -51,8 +50,9 @@ function registerHandlers(): void {
   }))
 
   register(IPC.updateCheck, () => checkForUpdate())
-  register(IPC.updateDownload, (version: string) => downloadUpdate(version))
-  register(IPC.feedbackSubmit, (content: string, version: string) => submitFeedback(content, version))
+  register(IPC.updateDownload, (version: string) => downloadUpdate(version, (downloaded, total) => {
+    emitBackendEvent(IPC.updateDownloadProgress, { downloaded, total })
+  }))
 
   register(IPC.settingsGet, () => getSettings())
   register(IPC.settingsSet, async (patch: Partial<AppSettings>) => {

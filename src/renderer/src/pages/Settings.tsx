@@ -7,6 +7,7 @@ import { Icon } from '@/components/icons'
 import { relativeTime } from '@/utils/format'
 import { SITE_TYPE_LABEL } from '@shared/siteLabels'
 import { translate } from '@/i18n'
+import { submitFeedback as sendFeedback } from '@/services/feedback'
 
 export function Settings(): JSX.Element {
   const sources = useApp((s) => s.sources)
@@ -32,6 +33,7 @@ export function Settings(): JSX.Element {
   const [editing, setEditing] = useState<{ id: string; name: string; url: string } | null>(null)
   const [feedback, setFeedback] = useState('')
   const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [feedbackSending, setFeedbackSending] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'sources' | 'about'>('general')
   const [settingsDraft, setSettingsDraft] = useState<AppSettings | null>(null)
 
@@ -70,7 +72,7 @@ export function Settings(): JSX.Element {
 
   async function submitFeedback(): Promise<void> {
     const content = feedback.trim()
-    if (!content) return
+    if (!content || feedbackSending) return
     if (content === '4848') {
       setSessionFilterAdult(false)
       setFeedback('')
@@ -91,12 +93,15 @@ export function Settings(): JSX.Element {
       return
     }
 
+    setFeedbackSending(true)
     try {
-      await window.api.feedback.submit(content, useApp.getState().info?.version ?? '未知')
+      await sendFeedback(content, useApp.getState().info?.version ?? '未知')
       setFeedback('')
       setFeedbackMessage('反馈已提交，感谢您的建议。')
     } catch (error) {
       setFeedbackMessage(`反馈提交失败：${(error as Error).message.replace(/^反馈提交失败：\s*/, '')}`)
+    } finally {
+      setFeedbackSending(false)
     }
   }
 
@@ -273,28 +278,33 @@ export function Settings(): JSX.Element {
       <section className="section">
         <div className="section-head">
           <div className="section-title">{translate("开发里程碑")}</div>
-          <div className="section-more">{translate("历史框架文档：docs/legacy/功能框架.txt")}</div>
+          <div className="section-more">{translate("当前版本：1.0.24")}</div>
         </div>
         <div className="milestones">
           <div className="milestone done">
             <div className="milestone-head"><span className="milestone-code">M1</span><span className="tag tag-success">{translate("已完成")}</span></div>
-            <div className="milestone-title">{translate("项目骨架 + 配置源管理")}</div>
-            <div className="milestone-desc">{translate("Tauri 2/React/TypeScript 工程、配置源增删同步、影视源列表与连通性测试。")}</div>
+            <div className="milestone-title">{translate("桌面基础与配置管理")}</div>
+            <div className="milestone-desc">{translate("Tauri 2 桌面应用、配置导入同步、影视源管理、解析接口和基础设置。")}</div>
           </div>
           <div className="milestone done">
             <div className="milestone-head"><span className="milestone-code">M2</span><span className="tag tag-success">{translate("已完成")}</span></div>
-            <div className="milestone-title">{translate("聚合搜索 + 详情选集 + 播放器")}</div>
-            <div className="milestone-desc">{translate("多站点搜索、线路与剧集解析、Video.js 播放、弹幕、画中画和全屏控制。")}</div>
+            <div className="milestone-title">{translate("首页、分类与聚合搜索")}</div>
+            <div className="milestone-desc">{translate("多源片单、分类浏览、站点搜索开关、单源超时控制和搜索结果筛选。")}</div>
           </div>
           <div className="milestone done">
             <div className="milestone-head"><span className="milestone-code">M3</span><span className="tag tag-success">{translate("已完成")}</span></div>
-            <div className="milestone-title">{translate("收藏 / 历史 + 离线缓存")}</div>
-            <div className="milestone-desc">{translate("收藏夹、观看历史与续播、下载队列和本地播放。")}</div>
+            <div className="milestone-title">{translate("在线播放与播放控制")}</div>
+            <div className="milestone-desc">{translate("线路和剧集切换、弹幕、画中画、全屏、进度预览、播放记忆与快捷控制。")}</div>
           </div>
           <div className="milestone done">
             <div className="milestone-head"><span className="milestone-code">M4</span><span className="tag tag-success">{translate("已完成")}</span></div>
-            <div className="milestone-title">{translate("首页片单 + 解析接口 + 外部播放器")}</div>
-            <div className="milestone-desc">{translate("多源首页推荐、网页播放地址解析、解析接口和本机播放器检测。")}</div>
+            <div className="milestone-title">{translate("收藏、历史与离线播放")}</div>
+            <div className="milestone-desc">{translate("收藏夹、观看历史与续播、下载队列和本地文件播放。")}</div>
+          </div>
+          <div className="milestone doing">
+            <div className="milestone-head"><span className="milestone-code">M5</span><span className="tag tag-accent">{translate("当前迭代")}</span></div>
+            <div className="milestone-title">{translate("体验优化与反馈闭环")}</div>
+            <div className="milestone-desc">{translate("优化播放预览和跳转反馈，完善应用内反馈提交、更新检查与发布验证。")}</div>
           </div>
         </div>
       </section>
@@ -316,7 +326,7 @@ export function Settings(): JSX.Element {
                   placeholder={translate("请填写你遇到的问题或建议")}
                 />
               </div>
-              <button type="button" className="btn btn-primary" disabled={!feedback.trim()} onClick={() => void submitFeedback()}>{translate("\n                提交\n              ")}</button>
+              <button type="button" className="btn btn-primary" disabled={!feedback.trim() || feedbackSending} onClick={() => void submitFeedback()}>{feedbackSending ? translate('正在提交…') : translate("\n                提交\n              ")}</button>
             </div>
             {feedbackMessage ? <div className="field-hint" style={{ marginTop: 8 }}>{feedbackMessage}</div> : null}
           </div>

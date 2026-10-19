@@ -25,7 +25,7 @@ const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
 const PREVIEW_FRAME_INTERVAL_SECONDS = 5
-const PREVIEW_FRAME_CACHE_LIMIT = 720
+const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 
@@ -79,9 +79,9 @@ function formatMarkerTime(seconds: number): string {
     : `${minutes}:${String(remainder).padStart(2, '0')}`
 }
 
-function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number): string | null {
+function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number, bucketSeconds = seconds): string | null {
   if (media.readyState < 2 || media.videoWidth <= 0 || media.videoHeight <= 0 || !Number.isFinite(seconds)) return null
-  const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+  const bucket = Math.floor(bucketSeconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
   const cached = cache.get(bucket)
   if (cached) return cached
   try {
@@ -165,6 +165,7 @@ export function Player({
   const progressPreviewContainerRef = useRef<HTMLDivElement>(null)
   const previewFramesRef = useRef(new Map<number, string>())
   const seekOverlayTimerRef = useRef<number | undefined>(undefined)
+  const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
@@ -232,6 +233,7 @@ export function Player({
   const [previewFrameReady, setPreviewFrameReady] = useState(false)
   const [previewFrameSrc, setPreviewFrameSrc] = useState('')
   const [seekOverlaySrc, setSeekOverlaySrc] = useState('')
+  const [playerActionFeedback, setPlayerActionFeedback] = useState('')
   const [systemClock, setSystemClock] = useState(() => new Date())
   const [legacySkipMarkers] = useState<LegacySkipMarkers>(readLegacySkipMarkers)
   const legacySkipMarkersRef = useRef(legacySkipMarkers)
@@ -250,6 +252,15 @@ export function Player({
       clearTimeout(danmakuBatchTimer.current)
       danmakuBatchTimer.current = null
     }
+  }, [])
+
+  const flashPlayerAction = useCallback((message: string): void => {
+    if (playerActionTimerRef.current !== undefined) window.clearTimeout(playerActionTimerRef.current)
+    setPlayerActionFeedback(message)
+    playerActionTimerRef.current = window.setTimeout(() => {
+      playerActionTimerRef.current = undefined
+      setPlayerActionFeedback('')
+    }, 300)
   }, [])
 
   const displayDanmakuProgressively = useCallback((
@@ -501,6 +512,7 @@ export function Player({
     const playerBox: { current: VideoPlayer | null } = { current: null }
     let lastSaved = 0
     const raw = episode.url
+    let stopPreviewScanForPlayer = (): void => undefined
 
     // 观看记录：进播放页就先记一条（position 0），之后由 timeupdate 定时刷新进度。
     // 用 5 秒节流，否则 timeupdate 每 250ms 触发一次会把 store 和磁盘写爆。
@@ -560,6 +572,96 @@ export function Player({
         }
         return closest?.src ?? ''
       }
+      let previewScanPlayer: VideoPlayer | null = null
+      let previewScanHost: HTMLDivElement | null = null
+      let previewScanStopped = false
+      let previewScanStarted = false
+      let previewScanTimer: number | undefined
+      let stablePlaybackTimer: number | undefined
+      let scanSeekTimer: number | undefined
+      let scanSeekListener: (() => void) | undefined
+      const stopPreviewScan = (): void => {
+        previewScanStopped = true
+        if (previewScanTimer !== undefined) window.clearTimeout(previewScanTimer)
+        if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
+        if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
+        const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
+        if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+        previewScanPlayer?.dispose()
+        previewScanPlayer = null
+        previewScanHost?.remove()
+        previewScanHost = null
+      }
+      stopPreviewScanForPlayer = stopPreviewScan
+      const schedulePreviewScan = (delay = 350): void => {
+        if (previewScanStopped || previewScanTimer !== undefined) return
+        previewScanTimer = window.setTimeout(() => {
+          previewScanTimer = undefined
+          scanNextPreviewFrame()
+        }, delay)
+      }
+      const scanNextPreviewFrame = (): void => {
+        if (previewScanStopped || !visibleRef.current) return
+        if (player.paused() || previewHoveringRef.current || player.isDisposed()) {
+          schedulePreviewScan(900)
+          return
+        }
+        const duration = Number(player.duration())
+        if (!Number.isFinite(duration) || duration <= 0) {
+          schedulePreviewScan(900)
+          return
+        }
+        let target = 0
+        while (target < duration && previewFramesRef.current.has(target)) target += PREVIEW_FRAME_INTERVAL_SECONDS
+        if (target >= duration) {
+          stopPreviewScan()
+          return
+        }
+        if (!previewScanPlayer) {
+          previewScanHost = document.createElement('div')
+          previewScanHost.style.cssText = 'position:fixed;left:-10000px;top:0;width:160px;height:90px;opacity:0;pointer-events:none;overflow:hidden'
+          document.body.appendChild(previewScanHost)
+          previewScanPlayer = createVideoPlayer(previewScanHost, { url, accent: settings?.accent, hls, preview: true })
+          previewScanPlayer.on('error', stopPreviewScan)
+        }
+        const scanPlayer = previewScanPlayer
+        const media = scanPlayer.tech(true)?.el() as HTMLVideoElement | undefined
+        if (!media || scanPlayer.readyState() < 1) {
+          schedulePreviewScan(700)
+          return
+        }
+        const frameReady = (): void => {
+          if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
+          if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+          scanSeekTimer = undefined
+          scanSeekListener = undefined
+          if (previewScanStopped || !previewScanPlayer || media.readyState < 2) {
+            schedulePreviewScan(700)
+            return
+          }
+          cachePreviewFrame(previewFramesRef.current, media, Number(scanPlayer.currentTime()) || target, target)
+          schedulePreviewScan()
+        }
+        const current = Number(scanPlayer.currentTime()) || 0
+        if (Math.abs(current - target) < 0.25 && media.readyState >= 2) {
+          frameReady()
+          return
+        }
+        scanSeekListener = frameReady
+        media.addEventListener('seeked', frameReady, { once: true })
+        scanSeekTimer = window.setTimeout(() => {
+          if (media && scanSeekListener) media.removeEventListener('seeked', scanSeekListener)
+          scanSeekTimer = undefined
+          scanSeekListener = undefined
+          stopPreviewScan()
+        }, 10_000)
+        seekVideoPlayer(scanPlayer, target)
+      }
+      const startPreviewScan = (): void => {
+        if (previewScanStarted || previewScanStopped) return
+        previewScanStarted = true
+        schedulePreviewScan(0)
+      }
       player.one('canplay', () => {
         if (!visibleRef.current || !autoplayRef.current || !player.paused()) return
         void Promise.resolve(player.play()).catch(() => {
@@ -609,6 +711,12 @@ export function Player({
       })
       player.on('playing', () => {
         setIsPlaying(true)
+        if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
+        stablePlaybackTimer = window.setTimeout(startPreviewScan, 3000)
+      })
+      player.on('waiting', () => {
+        if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
+        stablePlaybackTimer = undefined
       })
       player.on('pause', () => {
         setIsPlaying(false)
@@ -684,6 +792,7 @@ export function Player({
 
     return () => {
       alive = false
+      stopPreviewScanForPlayer()
       playerRef.current = null
       setActivePlayer(null)
       playerBox.current?.dispose()
@@ -922,11 +1031,48 @@ export function Player({
         event.preventDefault()
         event.stopImmediatePropagation()
         if (!event.repeat) void toggleFullscreen()
+      } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        if (!activePlayer || activePlayer.isDisposed()) return
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          const direction = event.key === 'ArrowLeft' ? -1 : 1
+          const duration = Number(activePlayer.duration())
+          const current = Number(activePlayer.currentTime()) || 0
+          const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
+          const target = Math.max(0, Math.min(limit, current + direction * 10))
+          seekVideoPlayer(activePlayer, target)
+          setPlaybackPosition(target)
+          flashPlayerAction(`${direction < 0 ? '−' : '+'}10 秒`)
+        } else {
+          const direction = event.key === 'ArrowUp' ? 1 : -1
+          const next = Math.max(0, Math.min(1, (activePlayer.volume() ?? 1) + direction * 0.05))
+          if (direction > 0) activePlayer.muted(false)
+          activePlayer.volume(next)
+          flashPlayerAction(`音量 ${Math.round(next * 100)}%`)
+        }
       }
     }
+    const stage = stageRef.current
+    const onWheel = (event: WheelEvent): void => {
+      if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
+      event.preventDefault()
+      event.stopPropagation()
+      const direction = event.deltaY < 0 ? 1 : -1
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 1 : 100
+      const steps = Math.max(1, Math.min(10, Math.round(Math.abs(event.deltaY) / unit)))
+      const next = Math.max(0, Math.min(1, (activePlayer.volume() ?? 1) + direction * steps * 0.05))
+      if (direction > 0) activePlayer.muted(false)
+      activePlayer.volume(next)
+      flashPlayerAction(`音量 ${Math.round(next * 100)}%`)
+    }
     window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback])
+    stage?.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      stage?.removeEventListener('wheel', onWheel)
+    }
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
@@ -1030,30 +1176,17 @@ export function Player({
     const onMove = (event: PointerEvent): void => updateProgressPreviewAt(event.clientX, holder.getBoundingClientRect())
     const onLeave = (): void => hideProgressPreview()
     const onVolumeIntent = (): void => clearProgressPreview()
-    const onVolumeWheel = (event: WheelEvent): void => {
-      event.preventDefault()
-      event.stopPropagation()
-      const direction = event.deltaY < 0 ? 1 : -1
-      const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 3 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? 1 : 100
-      const steps = Math.max(1, Math.min(10, Math.round(Math.abs(event.deltaY) / unit)))
-      const current = activePlayer?.volume() ?? 1
-      const next = Math.max(0, Math.min(1, current + direction * steps * 0.05))
-      if (direction > 0) activePlayer?.muted(false)
-      activePlayer?.volume(next)
-    }
     progressControl.addEventListener('pointerenter', onMove)
     progressControl.addEventListener('pointermove', onMove)
     progressControl.addEventListener('pointerleave', onLeave)
     volumePanel?.addEventListener('pointerenter', onVolumeIntent)
     volumePanel?.addEventListener('pointermove', onVolumeIntent)
-    volumePanel?.addEventListener('wheel', onVolumeWheel, { passive: false })
     return () => {
       progressControl.removeEventListener('pointerenter', onMove)
       progressControl.removeEventListener('pointermove', onMove)
       progressControl.removeEventListener('pointerleave', onLeave)
       volumePanel?.removeEventListener('pointerenter', onVolumeIntent)
       volumePanel?.removeEventListener('pointermove', onVolumeIntent)
-      volumePanel?.removeEventListener('wheel', onVolumeWheel)
     }
   }, [activePlayer, clearProgressPreview, hideProgressPreview, updateProgressPreviewAt])
 
@@ -1327,6 +1460,7 @@ export function Player({
           >
             <div ref={containerRef} className="player-stage-inner" />
             {seekOverlaySrc ? <img className="player-seek-preview-frame" src={seekOverlaySrc} alt="" aria-hidden="true" /> : null}
+            {playerActionFeedback ? <div className="player-action-feedback" aria-live="polite">{playerActionFeedback}</div> : null}
             <DanmakuCanvas
               player={activePlayer}
               cues={danmakuCues}
