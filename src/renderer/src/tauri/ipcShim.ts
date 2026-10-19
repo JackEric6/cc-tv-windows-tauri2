@@ -75,7 +75,7 @@ export const ipcRenderer = {
     }
     if (channel === IPC.openExternal) {
       const url = String(args[0] ?? '')
-      if (!/^(https?:\/\/|mailto:)/i.test(url)) throw new Error('仅支持打开 http/https 或 mailto 链接')
+      if (!/^https?:\/\//i.test(url)) throw new Error('仅支持打开 http/https 链接')
       await openExternal(url)
       return undefined as T
     }

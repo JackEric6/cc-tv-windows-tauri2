@@ -34,6 +34,10 @@ import type {
 const api = {
   info: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appInfo),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.openExternal, url),
+  feedback: {
+    submit: (content: string, version: string): Promise<void> =>
+      ipcRenderer.invoke(IPC.feedbackSubmit, content, version)
+  },
   updater: {
     check: (): Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean; notes: string }> =>
       ipcRenderer.invoke(IPC.updateCheck),
