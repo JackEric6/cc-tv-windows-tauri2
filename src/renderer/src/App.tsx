@@ -17,6 +17,8 @@ import { Downloads } from '@/pages/Downloads'
 import { OfflinePlayer } from '@/pages/OfflinePlayer'
 import '@/styles/pages.css'
 
+const SKIPPED_UPDATE_VERSION_KEY = 'cc-tv-skipped-update-version'
+
 export default function App(): JSX.Element {
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -47,6 +49,7 @@ export default function App(): JSX.Element {
         try {
           const update = await window.api.updater.check()
           if (!update.hasUpdate) return
+          if (localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY) === update.latestVersion) return
           setUpdatePrompt({
             version: update.latestVersion,
             currentVersion: update.currentVersion,
@@ -112,7 +115,13 @@ export default function App(): JSX.Element {
                 <Route path="/downloads" element={<Downloads />} />
                 <Route path="/offline/:id" element={<OfflinePlayer />} />
                 <Route path="/sites" element={<Sites />} />
-                <Route path="/settings" element={<Settings />} />
+                <Route path="/settings" element={<Settings onUpdateFound={(update) => {
+                  if (localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY) === update.version) {
+                    notify(`已跳过版本 v${update.version}`, 'info')
+                    return
+                  }
+                  setUpdatePrompt(update)
+                }} />} />
                 <Route path="*" element={noSources ? <FirstRun /> : <Home />} />
               </Routes>
             )}
@@ -149,6 +158,11 @@ export default function App(): JSX.Element {
             ) : null}
             <div className="update-prompt-actions">
               <button type="button" className="btn" disabled={updateInstalling} onClick={() => setUpdatePrompt(null)}>稍后</button>
+              <button type="button" className="btn" disabled={updateInstalling} onClick={() => {
+                localStorage.setItem(SKIPPED_UPDATE_VERSION_KEY, updatePrompt.version)
+                setUpdatePrompt(null)
+                notify(`已跳过版本 v${updatePrompt.version}`, 'success')
+              }}>跳过此版本</button>
               <button type="button" className="btn btn-primary" disabled={updateInstalling} onClick={() => void installUpdate()}>
                 {updateInstalling ? <><span className="spin" />{updateProgress.total > 0 && updateProgress.downloaded >= updateProgress.total ? '正在校验…' : '正在下载…'}</> : '立即更新'}
               </button>

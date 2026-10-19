@@ -8,6 +8,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { networkFetch } from './http'
 
 const REPOSITORY = 'JackEric6/cc-tv-windows-tauri2'
+const GITHUB_API_PROXY = 'https://gh-proxy.com/https://api.github.com'
+const GITHUB_RELEASE_PROXY = 'https://ghproxy.net/https://github.com'
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 
 interface GitHubRelease {
@@ -32,7 +34,7 @@ function compareVersions(left: string, right: string): number {
 }
 
 async function getLatestRelease(): Promise<{ currentVersion: string; latestVersion: string; notes: string; assetName: string; assetSize: number; digest: string }> {
-  const response = await networkFetch(`https://api.github.com/repos/${REPOSITORY}/releases/latest`, {
+  const response = await networkFetch(`${GITHUB_API_PROXY}/repos/${REPOSITORY}/releases/latest`, {
     headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
     signal: AbortSignal.timeout(15_000)
   })
@@ -76,7 +78,7 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   }
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
-  const downloadUrl = `https://ghproxy.net/https://github.com/${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
+  const downloadUrl = `${GITHUB_RELEASE_PROXY}/${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
   const response = await networkFetch(downloadUrl, { signal: AbortSignal.timeout(10 * 60_000) })
   if (!response.ok || !response.body) throw new Error(`下载更新失败：HTTP ${response.status}`)
   const contentLength = Number(response.headers.get('content-length'))

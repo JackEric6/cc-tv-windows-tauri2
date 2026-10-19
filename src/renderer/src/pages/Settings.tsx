@@ -9,7 +9,11 @@ import { SITE_TYPE_LABEL } from '@shared/siteLabels'
 import { translate } from '@/i18n'
 import { submitFeedback as sendFeedback } from '@/services/feedback'
 
-export function Settings(): JSX.Element {
+interface SettingsProps {
+  onUpdateFound: (update: { version: string; currentVersion: string; notes: string }) => void
+}
+
+export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   const sources = useApp((s) => s.sources)
   const settings = useApp((s) => s.settings)
   const info = useApp((s) => s.info)
@@ -97,7 +101,7 @@ export function Settings(): JSX.Element {
     try {
       await sendFeedback(content, useApp.getState().info?.version ?? '未知')
       setFeedback('')
-      setFeedbackMessage('反馈已保存在本机应用数据目录，感谢您的建议。')
+      setFeedbackMessage('已提交')
     } catch (error) {
       setFeedbackMessage(`反馈提交失败：${(error as Error).message.replace(/^反馈提交失败：\s*/, '')}`)
     } finally {
@@ -489,6 +493,7 @@ export function Settings(): JSX.Element {
             draft={settingsDraft}
             setDraft={(next) => setSettingsDraft(next)}
             onImmediatePatch={patchImmediateSettings}
+            onUpdateFound={onUpdateFound}
           />
         ) : null}
         {settingsTab === 'general' && settings && settingsDraft ? (
@@ -567,6 +572,7 @@ interface GeneralProps {
   draft: AppSettings
   setDraft: (draft: AppSettings) => void
   onImmediatePatch: (patch: Partial<AppSettings>) => Promise<void>
+  onUpdateFound: (update: { version: string; currentVersion: string; notes: string }) => void
 }
 
 interface AiSettingsProps {
@@ -770,7 +776,7 @@ function ParseSettingsSection(): JSX.Element {
   )
 }
 
-function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: GeneralProps): JSX.Element {
+function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdateFound }: GeneralProps): JSX.Element {
   const notify = useApp((s) => s.notify)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateStatus, setUpdateStatus] = useState('')
@@ -784,14 +790,13 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: Genera
         setUpdateStatus(`当前已是最新版本 v${update.currentVersion}`)
         return
       }
-      const notes = update.notes ? `\n\n${update.notes.slice(0, 1600)}` : ''
-      if (!window.confirm(`发现新版本 v${update.latestVersion}，当前版本 v${update.currentVersion}。现在下载并安装吗？${notes}`)) {
-        setUpdateStatus(`发现新版本 v${update.latestVersion}`)
+      const skippedVersion = localStorage.getItem('cc-tv-skipped-update-version')
+      if (skippedVersion === update.latestVersion) {
+        setUpdateStatus(`已跳过版本 v${update.latestVersion}`)
         return
       }
-      setUpdateStatus(`正在下载 v${update.latestVersion}…`)
-      const installer = await window.api.updater.download(update.latestVersion)
-      await window.api.updater.install(installer)
+      setUpdateStatus(`发现新版本 v${update.latestVersion}`)
+      onUpdateFound({ version: update.latestVersion, currentVersion: update.currentVersion, notes: update.notes.slice(0, 1600) })
     } catch (error) {
       const message = (error as Error).message
       setUpdateStatus(`检查更新失败：${message}`)
