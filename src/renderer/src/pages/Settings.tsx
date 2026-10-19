@@ -92,16 +92,13 @@ export function Settings(): JSX.Element {
     }
 
     try {
-      const title = content.replace(/\s+/g, ' ').slice(0, 60)
+      const title = content.replace(/\s+/g, ' ').slice(0, 60) || '用户反馈'
       const body = `${content}\n\n---\n应用版本：${useApp.getState().info?.version ?? '未知'}\n系统：Windows 桌面版`
-      const issueUrl = new URL('https://github.com/JackEric6/cc-tv-windows-tauri2/issues/new')
-      issueUrl.searchParams.set('template', 'feedback.md')
-      issueUrl.searchParams.set('title', `用户反馈：${title}`)
-      issueUrl.searchParams.set('body', body)
-      await window.api.openExternal(issueUrl.href)
-      setFeedbackMessage('已打开 GitHub 反馈页。请登录并点击提交，提交后开发者可在公开仓库的 Issues 中查看。')
+      const mailto = `mailto:jackeric6@163.com?subject=${encodeURIComponent(`丛丛影视 Windows 反馈：${title}`)}&body=${encodeURIComponent(body)}`
+      await window.api.openExternal(mailto)
+      setFeedbackMessage('已打开邮件草稿，请检查内容后发送。此方式需要本机配置可用的邮件客户端。')
     } catch {
-      setFeedbackMessage('无法打开 GitHub 反馈页面，请检查网络连接后重试')
+      setFeedbackMessage('无法打开邮件客户端。请在本机配置邮件应用后重试，或发送邮件至 jackeric6@163.com。')
     }
   }
 
