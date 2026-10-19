@@ -1,6 +1,6 @@
 [package]
 name = "congcong-tv-windows-tauri2"
-version = "1.0.22"
+version = "1.0.23"
 description = "丛丛影视 Windows 桌面客户端"
 authors = ["丛丛影视"]
 edition = "2021"

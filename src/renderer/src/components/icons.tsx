@@ -34,6 +34,7 @@ export type IconName =
   | 'monitor'
   | 'grid'
   | 'sparkle'
+  | 'pin'
 
 const PATHS: Record<IconName, JSX.Element> = {
   home: (
@@ -167,7 +168,8 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M11 3.2 12.8 8.7 18.3 10.5 12.8 12.3 11 17.8 9.2 12.3 3.7 10.5 9.2 8.7z" />
       <path d="M17.6 14.6 18.5 17.2 21.1 18.1 18.5 19 17.6 21.6 16.7 19 14.1 18.1 16.7 17.2z" />
     </>
-  )
+  ),
+  pin: <path d="m16 3 5 5-4 1-4 4-1 5-2-2-5 5-1-1 5-5-2-2 5-1 4-4z" />
 }
 
 interface IconProps {

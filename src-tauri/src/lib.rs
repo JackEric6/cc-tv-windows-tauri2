@@ -37,6 +37,8 @@ struct BackendProcess {
     child: Mutex<Child>,
 }
 
+struct PendingInstaller(Mutex<Option<PathBuf>>);
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BackendInfo {
@@ -58,6 +60,43 @@ fn backend_info(backend: State<'_, BackendProcess>) -> BackendInfo {
         base_url: backend.base_url.clone(),
         token: backend.token.clone(),
     }
+}
+
+#[tauri::command]
+fn set_always_on_top(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+    window.set_always_on_top(enabled).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn install_downloaded_update(
+    app: AppHandle,
+    pending: State<'_, PendingInstaller>,
+    path: String,
+) -> Result<(), String> {
+    let requested = PathBuf::from(&path);
+    let filename = requested.file_name().and_then(|name| name.to_str()).ok_or("更新程序路径无效")?;
+    if requested.parent() != Some(std::env::temp_dir().as_path())
+        || !filename.starts_with("cc-tv-windows-tauri2-update-")
+        || requested.extension().and_then(|value| value.to_str()) != Some("exe")
+    {
+        return Err("更新程序必须位于系统临时目录且文件名有效".into());
+    }
+    let metadata = fs::metadata(&requested).map_err(|error| error.to_string())?;
+    if metadata.len() < 1_000_000 || metadata.len() > 120 * 1024 * 1024 {
+        return Err("更新安装包大小异常".into());
+    }
+    let mut signature = [0_u8; 2];
+    use std::io::Read;
+    fs::File::open(&requested)
+        .and_then(|mut file| file.read_exact(&mut signature))
+        .map_err(|error| error.to_string())?;
+    if &signature != b"MZ" {
+        return Err("更新安装包格式无效".into());
+    }
+    *pending.0.lock().map_err(|error| error.to_string())? = Some(requested);
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -349,7 +388,13 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![backend_info, start_cz4k_webview, close_cz4k_webview])
+        .invoke_handler(tauri::generate_handler![
+            backend_info,
+            set_always_on_top,
+            install_downloaded_update,
+            start_cz4k_webview,
+            close_cz4k_webview
+        ])
         .setup(|app| {
             let backend = start_backend(app.handle())?;
             if let Some((width, height)) = saved_window_size(&backend.data_dir) {
@@ -359,6 +404,7 @@ pub fn run() {
                 }
             }
             app.manage(backend);
+            app.manage(PendingInstaller(Mutex::new(None)));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -370,6 +416,20 @@ pub fn run() {
                 if let Ok(mut child) = backend.child.lock() {
                     let _ = child.kill();
                     let _ = child.wait();
+                }
+            }
+            if let Some(pending) = app_handle.try_state::<PendingInstaller>() {
+                if let Ok(mut installer) = pending.0.lock() {
+                    if let Some(path) = installer.take() {
+                        let mut command = Command::new(path);
+                        command.arg("/S").stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            command.creation_flags(0x08000000);
+                        }
+                        let _ = command.spawn();
+                    }
                 }
             }
         }

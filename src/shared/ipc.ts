@@ -2,6 +2,10 @@
 export const IPC = {
   appInfo: 'app:info',
   openExternal: 'app:open-external',
+  updateCheck: 'app:update-check',
+  updateDownload: 'app:update-download',
+  updateInstall: 'app:update-install',
+  windowAlwaysOnTop: 'window:always-on-top',
 
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',

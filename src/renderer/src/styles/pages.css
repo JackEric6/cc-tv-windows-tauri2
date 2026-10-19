@@ -1493,6 +1493,14 @@
   pointer-events: none;
 }
 
+.player-pin-toggle {
+  margin-left: auto;
+}
+
+.player-pin-toggle.active {
+  color: var(--accent, #2563eb);
+}
+
 .player-stage .video-js .vjs-control-bar {
   transition: opacity .18s ease, visibility .18s ease;
 }

@@ -30,12 +30,32 @@ export default function App(): JSX.Element {
   const ready = useApp((s) => s.ready)
   const init = useApp((s) => s.init)
   const sources = useApp((s) => s.sources)
+  const notify = useApp((s) => s.notify)
   const language = useApp((s) => s.settings?.language ?? 'zh-CN')
   setUiLanguage(language)
 
   useEffect(() => {
     void init()
   }, [init])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const update = await window.api.updater.check()
+          if (!update.hasUpdate) return
+          const notes = update.notes ? `\n\n${update.notes.slice(0, 1600)}` : ''
+          if (!window.confirm(`检测到新版本 v${update.latestVersion}，当前版本 v${update.currentVersion}。现在下载并安装吗？${notes}`)) return
+          notify(`正在下载 v${update.latestVersion} 更新包…`, 'info')
+          const installer = await window.api.updater.download(update.latestVersion)
+          await window.api.updater.install(installer)
+        } catch (error) {
+          console.warn('[updater] 自动检查更新失败', error)
+        }
+      })()
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [notify])
 
   useEffect(() => {
     if (isPlayerRoute) setLastPlayerLocation(location)

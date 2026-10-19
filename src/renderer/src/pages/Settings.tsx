@@ -92,14 +92,16 @@ export function Settings(): JSX.Element {
     }
 
     try {
-      const key = 'cc-tv-feedback-records'
-      const stored: unknown = JSON.parse(localStorage.getItem(key) ?? '[]')
-      const records = Array.isArray(stored) ? stored : []
-      localStorage.setItem(key, JSON.stringify([{ content, createdAt: Date.now() }, ...records].slice(0, 100)))
-      setFeedback('')
-      setFeedbackMessage(translate('反馈建议已保存在本机'))
+      const title = content.replace(/\s+/g, ' ').slice(0, 60)
+      const body = `${content}\n\n---\n应用版本：${useApp.getState().info?.version ?? '未知'}\n系统：Windows 桌面版`
+      const issueUrl = new URL('https://github.com/JackEric6/cc-tv-windows-tauri2/issues/new')
+      issueUrl.searchParams.set('template', 'feedback.md')
+      issueUrl.searchParams.set('title', `用户反馈：${title}`)
+      issueUrl.searchParams.set('body', body)
+      await window.api.openExternal(issueUrl.href)
+      setFeedbackMessage('已打开 GitHub 反馈页。请登录并点击提交，提交后开发者可在公开仓库的 Issues 中查看。')
     } catch {
-      setFeedbackMessage(translate('保存失败，请稍后重试'))
+      setFeedbackMessage('无法打开 GitHub 反馈页面，请检查网络连接后重试')
     }
   }
 
@@ -765,6 +767,34 @@ function ParseSettingsSection(): JSX.Element {
 
 function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: GeneralProps): JSX.Element {
   const notify = useApp((s) => s.notify)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState('')
+
+  const checkUpdates = async (): Promise<void> => {
+    setUpdateBusy(true)
+    setUpdateStatus('正在检查 GitHub Release…')
+    try {
+      const update = await window.api.updater.check()
+      if (!update.hasUpdate) {
+        setUpdateStatus(`当前已是最新版本 v${update.currentVersion}`)
+        return
+      }
+      const notes = update.notes ? `\n\n${update.notes.slice(0, 1600)}` : ''
+      if (!window.confirm(`发现新版本 v${update.latestVersion}，当前版本 v${update.currentVersion}。现在下载并安装吗？${notes}`)) {
+        setUpdateStatus(`发现新版本 v${update.latestVersion}`)
+        return
+      }
+      setUpdateStatus(`正在下载 v${update.latestVersion}…`)
+      const installer = await window.api.updater.download(update.latestVersion)
+      await window.api.updater.install(installer)
+    } catch (error) {
+      const message = (error as Error).message
+      setUpdateStatus(`检查更新失败：${message}`)
+      notify(`检查更新失败：${message}`, 'danger')
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
 
   const dirty = JSON.stringify(draft, (key, value) => key === 'theme' || key === 'ai' ? undefined : value)
     !== JSON.stringify(settings, (key, value) => key === 'theme' || key === 'ai' ? undefined : value)
@@ -857,6 +887,13 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch }: Genera
               onChange={(e) => setDraft({ ...draft, timeout: clampInt(e.target.value, 3, 120, 3) })}
             />
             <div className="field-hint">{translate("普通接口与详情请求的等待时间；聚合搜索单源截止时间单独设置")}</div>
+          </div>
+          <div className="field">
+            <label>软件更新</label>
+            <button type="button" className="btn btn-sm" disabled={updateBusy} onClick={() => void checkUpdates()}>
+              {updateBusy ? <span className="spin" /> : <Icon name="refresh" size={14} />}{updateBusy ? '正在检查…' : '检查更新'}
+            </button>
+            {updateStatus ? <div className="field-hint">{updateStatus}</div> : <div className="field-hint">启动后 3 秒自动检查 GitHub Release</div>}
           </div>
           <div className="field">
             <label>{translate("单源请求截止（秒）")}</label>

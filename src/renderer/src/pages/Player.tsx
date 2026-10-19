@@ -23,6 +23,7 @@ const SKIP_MARKER_LONG_PRESS_MS = 500
 const FULLSCREEN_CONTROL_HOVER_HEIGHT = 112
 const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
+const INLINE_CONTROL_IDLE_MS = 3000
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 
@@ -253,12 +254,28 @@ export function Player({
   const nextEpisodeRef = useRef(-1)
   const navigateEpisodeRef = useRef(navigateToEpisode)
   const fullscreenTimer = useRef<number | undefined>(undefined)
+  const inlineControlsTimer = useRef<number | undefined>(undefined)
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false)
 
   const clearFullscreenTimer = useCallback((): void => {
     if (fullscreenTimer.current === undefined) return
     window.clearTimeout(fullscreenTimer.current)
     fullscreenTimer.current = undefined
   }, [])
+
+  const clearInlineControlsTimer = useCallback((): void => {
+    if (inlineControlsTimer.current === undefined) return
+    window.clearTimeout(inlineControlsTimer.current)
+    inlineControlsTimer.current = undefined
+  }, [])
+
+  const scheduleInlineControlsHide = useCallback((): void => {
+    clearInlineControlsTimer()
+    inlineControlsTimer.current = window.setTimeout(() => {
+      inlineControlsTimer.current = undefined
+      setPlayerControlsVisible(false)
+    }, INLINE_CONTROL_IDLE_MS)
+  }, [clearInlineControlsTimer])
 
   const scheduleFullscreenHide = useCallback((delay: number): void => {
     clearFullscreenTimer()
@@ -267,6 +284,8 @@ export function Player({
       setPlayerControlsVisible(false)
     }, delay)
   }, [clearFullscreenTimer])
+
+  useEffect(() => () => clearInlineControlsTimer(), [clearInlineControlsTimer])
 
   const detail = details[detailKey(siteKey, vodId)]
   const favorited = favorites.some((favorite) => libraryKey(favorite.siteKey, favorite.vodId) === libraryKey(siteKey, vodId))
@@ -1131,6 +1150,7 @@ export function Player({
     }
 
     if (document.fullscreenElement === stageRef.current) {
+      clearInlineControlsTimer()
       const bounds = stageRef.current?.getBoundingClientRect()
       const inControls = Boolean(bounds && event.clientY >= bounds.bottom - FULLSCREEN_CONTROL_HOVER_HEIGHT)
       if (inControls) {
@@ -1146,6 +1166,7 @@ export function Player({
 
     clearFullscreenTimer()
     setPlayerControlsVisible(true)
+    scheduleInlineControlsHide()
   }
 
   return (
@@ -1159,6 +1180,23 @@ export function Player({
         <span className="text-3 fs-12">
           {line?.name} · {episode.name}
         </span>
+        {!isFullscreen ? (
+          <button
+            type="button"
+            className={`btn btn-sm player-pin-toggle${alwaysOnTop ? ' active' : ''}`}
+            aria-pressed={alwaysOnTop}
+            title={translate(alwaysOnTop ? '取消窗口置顶' : '窗口置顶')}
+            onClick={async () => {
+              const next = !alwaysOnTop
+              try {
+                await window.api.window.setAlwaysOnTop(next)
+                setAlwaysOnTop(next)
+              } catch (error) {
+                notify(`窗口置顶设置失败：${(error as Error).message}`, 'danger')
+              }
+            }}
+          ><Icon name="pin" size={14} />{translate('置顶')}</button>
+        ) : null}
       </div>
 
       <div className="player-layout">
@@ -1171,6 +1209,7 @@ export function Player({
             if (event.pointerType === 'mouse') {
               pointerInsidePlayer.current = false
               clearFullscreenTimer()
+              clearInlineControlsTimer()
               setPlayerControlsVisible(false)
             }
           }}

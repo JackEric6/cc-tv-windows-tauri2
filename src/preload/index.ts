@@ -34,6 +34,15 @@ import type {
 const api = {
   info: (): Promise<AppInfo> => ipcRenderer.invoke(IPC.appInfo),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.openExternal, url),
+  updater: {
+    check: (): Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean; notes: string }> =>
+      ipcRenderer.invoke(IPC.updateCheck),
+    download: (version: string): Promise<string> => ipcRenderer.invoke(IPC.updateDownload, version),
+    install: (path: string): Promise<void> => ipcRenderer.invoke(IPC.updateInstall, path)
+  },
+  window: {
+    setAlwaysOnTop: (enabled: boolean): Promise<void> => ipcRenderer.invoke(IPC.windowAlwaysOnTop, enabled)
+  },
 
   settings: {
     get: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.settingsGet),

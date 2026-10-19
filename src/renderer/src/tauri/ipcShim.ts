@@ -65,6 +65,14 @@ export const contextBridge = {
 
 export const ipcRenderer = {
   async invoke<T = unknown>(channel: string, ...args: unknown[]): Promise<T> {
+    if (channel === IPC.updateInstall) {
+      await tauriInvoke('install_downloaded_update', { path: String(args[0] ?? '') })
+      return undefined as T
+    }
+    if (channel === IPC.windowAlwaysOnTop) {
+      await tauriInvoke('set_always_on_top', { enabled: Boolean(args[0]) })
+      return undefined as T
+    }
     if (channel === IPC.openExternal) {
       const url = String(args[0] ?? '')
       if (!/^https?:\/\//i.test(url)) throw new Error('仅支持打开 http/https 链接')
