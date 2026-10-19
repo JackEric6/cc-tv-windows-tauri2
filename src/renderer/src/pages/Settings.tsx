@@ -96,7 +96,7 @@ export function Settings(): JSX.Element {
       setFeedback('')
       setFeedbackMessage('反馈已提交，感谢您的建议。')
     } catch (error) {
-      setFeedbackMessage(`反馈提交失败：${(error as Error).message}`)
+      setFeedbackMessage(`反馈提交失败：${(error as Error).message.replace(/^反馈提交失败：\s*/, '')}`)
     }
   }
 

@@ -24,6 +24,8 @@ const FULLSCREEN_CONTROL_HOVER_HEIGHT = 112
 const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
+const PREVIEW_FRAME_INTERVAL_SECONDS = 5
+const PREVIEW_FRAME_CACHE_LIMIT = 720
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 
@@ -75,6 +77,35 @@ function formatMarkerTime(seconds: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
     : `${minutes}:${String(remainder).padStart(2, '0')}`
+}
+
+function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number): string | null {
+  if (media.readyState < 2 || media.videoWidth <= 0 || media.videoHeight <= 0 || !Number.isFinite(seconds)) return null
+  const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+  const cached = cache.get(bucket)
+  if (cached) return cached
+  try {
+    const canvas = document.createElement('canvas')
+    canvas.width = 160
+    canvas.height = 90
+    const context = canvas.getContext('2d', { alpha: false })
+    if (!context) return null
+    const scale = Math.max(canvas.width / media.videoWidth, canvas.height / media.videoHeight)
+    const width = media.videoWidth * scale
+    const height = media.videoHeight * scale
+    context.drawImage(media, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
+    const frame = canvas.toDataURL('image/jpeg', 0.42)
+    cache.set(bucket, frame)
+    while (cache.size > PREVIEW_FRAME_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value
+      if (oldest === undefined) break
+      cache.delete(oldest)
+    }
+    return frame
+  } catch {
+    // Protected or cross-origin streams can reject canvas capture.
+    return null
+  }
 }
 
 export function Player({
@@ -132,6 +163,8 @@ export function Player({
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const progressPreviewContainerRef = useRef<HTMLDivElement>(null)
+  const previewFramesRef = useRef(new Map<number, string>())
+  const seekOverlayTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
@@ -197,6 +230,8 @@ export function Player({
   const [progressPreview, setProgressPreview] = useState<{ seconds: number; x: number } | null>(null)
   const [playbackSource, setPlaybackSource] = useState<{ url: string; hls: boolean } | null>(null)
   const [previewFrameReady, setPreviewFrameReady] = useState(false)
+  const [previewFrameSrc, setPreviewFrameSrc] = useState('')
+  const [seekOverlaySrc, setSeekOverlaySrc] = useState('')
   const [systemClock, setSystemClock] = useState(() => new Date())
   const [legacySkipMarkers] = useState<LegacySkipMarkers>(readLegacySkipMarkers)
   const legacySkipMarkersRef = useRef(legacySkipMarkers)
@@ -491,6 +526,9 @@ export function Player({
 
     const mount = (url: string, hls: boolean): void => {
       setPlaybackSource({ url, hls })
+      previewFramesRef.current.clear()
+      setPreviewFrameSrc('')
+      setSeekOverlaySrc('')
       const player = createVideoPlayer(el, {
         url,
         accent: settings?.accent,
@@ -505,6 +543,23 @@ export function Player({
       player.on('error', () => {
         setError(translate('视频加载失败，可能是地址已失效、需要 Referer，或者需要解析接口。'))
       })
+      const capturePreviewFrame = (): void => {
+        const media = player.tech(true)?.el() as HTMLVideoElement | undefined
+        const currentTime = Number(player.currentTime())
+        if (media) cachePreviewFrame(previewFramesRef.current, media, currentTime)
+      }
+      const getCachedPreviewFrame = (seconds: number): string => {
+        const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+        const exact = previewFramesRef.current.get(bucket)
+        if (exact) return exact
+        let closest: { time: number; src: string } | undefined
+        for (const [time, src] of previewFramesRef.current) {
+          if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
+            closest = { time, src }
+          }
+        }
+        return closest?.src ?? ''
+      }
       player.one('canplay', () => {
         if (!visibleRef.current || !autoplayRef.current || !player.paused()) return
         void Promise.resolve(player.play()).catch(() => {
@@ -571,6 +626,7 @@ export function Player({
       save(true)
       player.on('timeupdate', () => {
         updatePlaybackClock()
+        capturePreviewFrame()
         save()
         const duration = player.duration()
         const currentTime = player.currentTime()
@@ -587,6 +643,22 @@ export function Player({
           outroTriggered.current = true
           navigateEpisodeRef.current(nextEpisodeRef.current)
         }
+      })
+      player.on('seeking', () => {
+        const frame = getCachedPreviewFrame(Number(player.currentTime()) || 0)
+        if (!frame) return
+        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
+        setSeekOverlaySrc(frame)
+        seekOverlayTimerRef.current = window.setTimeout(() => {
+          seekOverlayTimerRef.current = undefined
+          setSeekOverlaySrc('')
+        }, 1800)
+      })
+      player.on('seeked', () => {
+        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
+        seekOverlayTimerRef.current = undefined
+        setSeekOverlaySrc('')
+        capturePreviewFrame()
       })
       player.on('pause', () => save(true))
       player.on('ended', () => save(true))
@@ -911,7 +983,19 @@ export function Player({
     }
     previewHoveringRef.current = true
     previewLastXRef.current = x
-    setPreviewFrameReady(false)
+    const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+    let frame = previewFramesRef.current.get(bucket) ?? ''
+    if (!frame) {
+      let closest: { time: number; src: string } | undefined
+      for (const [time, src] of previewFramesRef.current) {
+        if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
+          closest = { time, src }
+        }
+      }
+      frame = closest?.src ?? ''
+    }
+    setPreviewFrameSrc(frame)
+    setPreviewFrameReady(Boolean(frame))
     setProgressPreview({ seconds, x })
   }, [playbackDuration])
 
@@ -926,6 +1010,7 @@ export function Player({
       previewSeekTimerRef.current = undefined
     }
     setPreviewFrameReady(false)
+    setPreviewFrameSrc('')
     setProgressPreview(null)
   }, [])
 
@@ -986,6 +1071,7 @@ export function Player({
 
   useEffect(() => {
     if (!progressPreview || !playbackSource) return
+    if (previewFrameSrc) return
     const host = progressPreviewContainerRef.current
     if (!host) return
     const sourceKey = `${playbackSource.url}\u001f${playbackSource.hls}`
@@ -1008,6 +1094,8 @@ export function Player({
       const markFrameReady = (): void => {
         const current = Number(previewPlayer?.currentTime())
         if (previewHoveringRef.current && Number.isFinite(current) && Math.abs(current - previewSeekTargetRef.current) < 1.25) {
+          const media = previewPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
+          if (media) cachePreviewFrame(previewFramesRef.current, media, current)
           setPreviewFrameReady(true)
         }
       }
@@ -1019,11 +1107,12 @@ export function Player({
       })
     }
     schedulePreviewSeek(progressPreview.seconds)
-  }, [progressPreview, playbackSource, schedulePreviewSeek, settings?.accent])
+  }, [progressPreview, playbackSource, previewFrameSrc, schedulePreviewSeek, settings?.accent])
 
   useEffect(() => () => {
     if (previewSeekTimerRef.current !== undefined) window.clearTimeout(previewSeekTimerRef.current)
     if (previewHideTimerRef.current !== undefined) window.clearTimeout(previewHideTimerRef.current)
+    if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
     previewPlayerRef.current?.dispose()
     previewPlayerRef.current = null
   }, [])
@@ -1237,6 +1326,7 @@ export function Player({
             }}
           >
             <div ref={containerRef} className="player-stage-inner" />
+            {seekOverlaySrc ? <img className="player-seek-preview-frame" src={seekOverlaySrc} alt="" aria-hidden="true" /> : null}
             <DanmakuCanvas
               player={activePlayer}
               cues={danmakuCues}
@@ -1319,7 +1409,8 @@ export function Player({
               aria-hidden="true"
             >
               <div className={`player-progress-preview-frame${previewFrameReady ? ' ready' : ''}`}>
-                <div ref={progressPreviewContainerRef} className="player-progress-preview-video" />
+                {previewFrameSrc ? <img className="player-progress-preview-image" src={previewFrameSrc} alt="" /> : null}
+                <div ref={progressPreviewContainerRef} className={`player-progress-preview-video${previewFrameSrc ? ' cached' : ''}`} />
                 {!previewFrameReady && playbackSource ? <span className="player-progress-preview-loading"><span className="spin" /></span> : null}
               </div>
               <time>{progressPreview ? formatClock(progressPreview.seconds) : '--:--'}</time>
