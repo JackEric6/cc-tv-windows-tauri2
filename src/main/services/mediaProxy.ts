@@ -242,9 +242,14 @@ async function serveOfflineFile(
   }
 }
 
-export async function prepareMediaUrl(url: string, headers: Record<string, string> = {}, purify = true): Promise<string> {
+export async function prepareMediaUrl(
+  url: string,
+  headers: Record<string, string> = {},
+  purify = true,
+  forceProxy = false
+): Promise<string> {
   const target = validHttpUrl(url)
-  if (!/\.m3u8(?:$|[?#])/i.test(target.href) && !/\/hls\//i.test(target.pathname)) return url
+  if (!forceProxy && !/\.m3u8(?:$|[?#])/i.test(target.href) && !/\/hls\//i.test(target.pathname)) return url
   await listen()
   return proxyUri(target.href, headers, purify)
 }

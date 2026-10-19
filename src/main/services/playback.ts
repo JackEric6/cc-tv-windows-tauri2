@@ -50,7 +50,7 @@ export async function resolvePlaybackHeaders(siteKey: string, sourceUrl: string,
     for (const key of Object.keys(headers)) {
       if (key.toLowerCase() === 'user-agent') delete headers[key]
     }
-    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36'
+    headers['User-Agent'] = 'KSPlayer'
   }
   if (site && siteKey.toLowerCase() !== 'guazi' && !hasReferer()) {
     let referer = cmsRefererForApi(site.api)
@@ -83,11 +83,12 @@ export async function resolveEpisodeForPlayer(siteKey: string, rawUrl: string): 
   const headers = await resolvePlaybackHeaders(siteKey, sourceUrl, siteKey.toLowerCase() === 'fan_nomi' ? rawUrl : '')
   const settings = await getSettings()
   const purifyEnabled = shouldPurifyM3u8(siteKey, settings.m3u8Purify)
-  const guaziDirectHls = siteKey.toLowerCase() === 'guazi' &&
-    (/\.m3u8(?:$|[?#])/i.test(sourceUrl) || /\/hls\//i.test(sourceUrl))
+  const guaziDirectMedia = siteKey.toLowerCase() === 'guazi' && direct
   return {
-    url: guaziDirectHls ? sourceUrl : await prepare(sourceUrl, headers, purifyEnabled),
-    ...(guaziDirectHls ? { fallbackUrl: await prepare(sourceUrl, headers, false) } : {}),
+    // 先解析到 CDN 直链，再由本机侧车转发，使 WebView2 能使用 Android 同款 UA 并规避 CDN CORS 限制。
+    url: guaziDirectMedia
+      ? await prepareMediaUrl(sourceUrl, headers, false, true)
+      : await prepare(sourceUrl, headers, purifyEnabled),
     sourceUrl,
     direct,
     purifyEnabled
