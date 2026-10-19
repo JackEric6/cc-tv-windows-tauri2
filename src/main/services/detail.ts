@@ -180,8 +180,10 @@ export async function getVodDetail(siteKey: string, vodId: string): Promise<VodD
   if (site.unsupported) throw new Error(site.unsupported)
   if (!vodId) throw new Error('缺少影片 id')
 
-  if (isNativeAdaptedSite(site.key)) return getNativeSiteDetail(site, vodId)
-  if (site.key === 'guazi' || site.key === 'jianpian') return getCongcongSourceDetail(site, vodId)
+  if (isNativeAdaptedSite(site)) return getNativeSiteDetail(site, vodId)
+  if (site.nativeAdapter === 'guazi' || site.nativeAdapter === 'jianpian' || site.key === 'guazi' || site.key === 'jianpian') {
+    return getCongcongSourceDetail(site, vodId)
+  }
 
   if (site.type === 3 || site.type === 4) return detailCms(site, vodId)
   if (site.type === 1) return detailHtml(site, vodId)

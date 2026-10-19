@@ -7,7 +7,8 @@ import type {
   ParseItem,
   ParsedConfig,
   Site,
-  SiteType
+  SiteType,
+  NativeAdapter
 } from '@shared/types'
 import { fetchText, parseLooseJson } from './http'
 
@@ -72,6 +73,38 @@ function splitProtectedUrl(raw: string): { url: string; key?: string } {
   const url = raw.slice(0, marker).trim()
   const key = raw.slice(marker + 4).trim()
   return { url, key: key || undefined }
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+}
+
+/** 饭太硬等入口页是导航 HTML，按钮里带有真实配置候选地址。 */
+function portalConfigUrls(text: string, baseUrl: string): string[] {
+  const candidates: string[] = []
+  const pattern = /(?:data-clipboard-text|data-config-url|href)\s*=\s*["']([^"']+)["']/gi
+  for (const match of text.matchAll(pattern)) {
+    const raw = decodeHtmlAttribute(match[1]?.trim() ?? '')
+    if (!/^https?:\/\//i.test(raw)) continue
+    const resolved = resolveConfigUrl(raw, baseUrl)
+    if (!resolved || resolved === baseUrl) continue
+    if (!candidates.includes(resolved)) candidates.push(resolved)
+  }
+  return candidates
+}
+
+function nativeAdapterFor(rawApi: string, rawKey: string, rawName: string): NativeAdapter | undefined {
+  const api = rawApi.trim().toLowerCase()
+  const key = `${rawKey} ${rawName}`.toLowerCase()
+  if (/csp_appgzguard/.test(api) || /(?:^|\s)瓜子(?:\s|$)/u.test(key)) return 'guazi'
+  if (/csp_jpjguard/.test(api) || /(?:^|\s)(?:荐片|贱贱)(?:\s|$)/u.test(key)) return 'jianpian'
+  if (/csp_newczguard/.test(api) || /厂长/u.test(key)) return 'cz4k'
+  return undefined
 }
 
 function normalizeJar(raw: unknown, baseUrl?: string): string | undefined {
@@ -239,12 +272,14 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
   if (!input || typeof input !== 'object') return null
   const raw = input as Record<string, any>
   const name = String(raw.name ?? raw.title ?? '').trim()
-  const api = normalizeApi(String(raw.api ?? raw.url ?? raw.ext?.api ?? ''), ctx.baseUrl)
+  const rawApi = String(raw.api ?? raw.url ?? raw.ext?.api ?? '')
+  const api = normalizeApi(rawApi, ctx.baseUrl)
   if (!name && !api) return null
 
   const rules = normalizeRules(raw.rules ?? raw.ext?.rules)
   const type = normalizeType(raw.type, api, rules)
   const key = String(raw.key ?? raw.id ?? `csp_${shortHash(`${name}|${api}`)}`).trim()
+  const nativeAdapter = nativeAdapterFor(rawApi, key, name)
 
   const site: Site = {
     key,
@@ -255,6 +290,7 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
     backupDomain: Array.isArray(raw.backupDomain) ? raw.backupDomain.map(String).map((value: string) => value.trim()).filter(Boolean) : undefined,
     ext: typeof raw.ext === 'string' ? raw.ext : raw.ext ? JSON.stringify(raw.ext) : undefined,
     jar: normalizeJar(raw.jar, ctx.baseUrl),
+    nativeAdapter,
     searchable: flag(raw.searchable, true),
     homeEnabled: true,
     searchEnabled: flag(raw.searchable, true),
@@ -284,7 +320,7 @@ export function normalizeSite(input: unknown, ctx: SiteNormalizeContext): Site |
     site.unsupported = '该站点依赖内置 Spider 或本地资源，桌面端无法直接请求'
     site.searchable = false
     site.quickSearch = false
-  } else if (type === 0 || !/^https?:\/\//i.test(site.api)) {
+  } else if (type === 0 || (!/^https?:\/\//i.test(site.api) && !nativeAdapter)) {
     site.unsupported = '需要配套 Spider（jar/dex），桌面端无法运行'
     site.searchable = false
     site.quickSearch = false
@@ -387,7 +423,22 @@ export async function loadConfigSource(
     const text = kind === 'file' && depth === 0
       ? await fs.readFile(protectedUrl.url, 'utf-8')
       : await fetchText(baseUrl, { timeout })
-    const json = decodeTvboxPayload(text, protectedUrl.key)
+    let json: unknown
+    try {
+      json = decodeTvboxPayload(text, protectedUrl.key)
+    } catch (error) {
+      const candidates = portalConfigUrls(text, baseUrl)
+      if (!candidates.length) throw error
+      let lastError = error as Error
+      for (const candidate of candidates) {
+        try {
+          return await load(candidate, 'url', depth + 1)
+        } catch (candidateError) {
+          lastError = candidateError as Error
+        }
+      }
+      throw new Error(`配置导航页中的候选地址均不可用：${lastError.message}`)
+    }
     const nextUrl = collectionUrl(json, baseUrl)
     if (nextUrl) return load(nextUrl, 'url', depth + 1)
     return parseConfig(json, {

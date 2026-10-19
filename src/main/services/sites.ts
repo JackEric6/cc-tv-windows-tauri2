@@ -144,13 +144,13 @@ export async function testSite(key: string): Promise<TestResult> {
   const start = Date.now()
 
   try {
-    if (isNativeAdaptedSite(site.key)) {
+    if (isNativeAdaptedSite(site)) {
       const list = await searchNativeSite(site, '抓特务', 5)
       if (!list.length) return { ok: false, ms: Date.now() - start, message: '适配入口可访问，但没有返回搜索结果' }
       await saveHealth(key, Date.now() - start)
       return { ok: true, ms: Date.now() - start, message: `专用适配正常，搜索到 ${list.length} 条`, sample: list[0].vod_name }
     }
-    if (site.key === 'guazi' || site.key === 'jianpian') {
+    if (site.nativeAdapter === 'guazi' || site.nativeAdapter === 'jianpian' || site.key === 'guazi' || site.key === 'jianpian') {
       const sample = await testCongcongSource(site)
       await saveHealth(key, Date.now() - start)
       return { ok: true, ms: Date.now() - start, message: '专用接口正常', sample }

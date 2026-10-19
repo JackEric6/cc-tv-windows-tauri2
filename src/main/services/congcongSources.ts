@@ -650,7 +650,7 @@ export async function searchCongcongSource(
   timeoutMs = 25_000,
   signal?: AbortSignal
 ): Promise<Vod[]> {
-  if (site.key === 'jianpian') {
+  if (site.nativeAdapter === 'jianpian' || site.key === 'jianpian') {
     return searchJianpianPage(site, keyword, 1, limit, '88', true, timeoutMs, signal)
   }
 
@@ -693,7 +693,7 @@ export async function listCongcongSourceHome(
   limit = 24,
   pid = GUAZI_HOME_PID
 ): Promise<Vod[]> {
-  if (site.key !== 'guazi') return []
+  if (site.nativeAdapter !== 'guazi' && site.key !== 'guazi') return []
   const payload = await guaziRequest('/App/IndexList/hotsList', {
     show_id: showId,
     pid
@@ -707,7 +707,7 @@ export async function listJianpianHome(
   keyword = '热播',
   categoryId = '88'
 ): Promise<Vod[]> {
-  if (site.key !== 'jianpian') return []
+  if (site.nativeAdapter !== 'jianpian' && site.key !== 'jianpian') return []
   const query = keyword.trim() || '热播'
   try {
     return await searchJianpianPage(site, query, 1, limit, categoryId, false)
@@ -718,7 +718,7 @@ export async function listJianpianHome(
 }
 
 export async function testCongcongSource(site: Site): Promise<string> {
-  if (site.key === 'jianpian') {
+  if (site.nativeAdapter === 'jianpian' || site.key === 'jianpian') {
     const results = await searchCongcongSource(site, '流浪地球', 1)
     return results.length ? `荐片接口正常，已返回《${results[0].vod_name}》` : '荐片接口已响应，测试关键词暂无结果'
   }
@@ -816,8 +816,8 @@ async function detailGuazi(site: Site, id: string): Promise<VodDetail> {
 }
 
 export async function getCongcongSourceDetail(site: Site, id: string): Promise<VodDetail> {
-  if (site.key === 'jianpian') return detailJianpian(site, id)
-  if (site.key === 'guazi') return detailGuazi(site, id)
+  if (site.nativeAdapter === 'jianpian' || site.key === 'jianpian') return detailJianpian(site, id)
+  if (site.nativeAdapter === 'guazi' || site.key === 'guazi') return detailGuazi(site, id)
   throw new Error('未知的丛丛影视专用源')
 }
 
@@ -846,8 +846,8 @@ function findPlayableUrl(value: unknown, depth = 0): string {
   return ''
 }
 
-export async function resolveCongcongEpisode(siteKey: string, rawUrl: string): Promise<string> {
-  if (siteKey !== 'guazi' || !rawUrl.startsWith('ccguazi://')) return rawUrl
+export async function resolveCongcongEpisode(siteKey: string, rawUrl: string, site?: Site): Promise<string> {
+  if ((site?.nativeAdapter !== 'guazi' && siteKey !== 'guazi') || !rawUrl.startsWith('ccguazi://')) return rawUrl
   const url = new URL(rawUrl)
   const params = url.searchParams
   const result = await guaziRequest('/App/Resource/VurlDetail/showOne', {

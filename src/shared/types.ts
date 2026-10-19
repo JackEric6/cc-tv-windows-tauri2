@@ -6,6 +6,9 @@
 /** 站点类型：0=需spider 1=网页/规则 2=自定义 3=苹果CMS 4=CMS变体 */
 export type SiteType = 0 | 1 | 2 | 3 | 4
 
+/** 不依赖 Android Spider 的 Windows 原生适配器。 */
+export type NativeAdapter = 'guazi' | 'jianpian' | 'cz4k' | 'fan_nomi' | 'ikanbot'
+
 export interface Site {
   key: string
   name: string
@@ -18,6 +21,8 @@ export interface Site {
   backupDomain?: string[]
   ext?: string
   jar?: string
+  /** TVBox csp_* 站点映射到 Windows 原生实现时使用。 */
+  nativeAdapter?: NativeAdapter
   searchable: boolean
   quickSearch: boolean
   filterable: boolean

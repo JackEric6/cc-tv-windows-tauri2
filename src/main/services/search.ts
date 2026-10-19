@@ -280,10 +280,10 @@ export async function searchSite(
   try {
     const timeout = timeoutOverride ?? site.timeout ?? (await getSettings()).timeout
     let list: Vod[]
-    if (isNativeAdaptedSite(site.key)) {
-      list = await searchNativeSite(site, wd, limit, timeout * 1000, signal)
-    } else if (site.key === 'guazi' || site.key === 'jianpian') {
+    if (site.nativeAdapter === 'guazi' || site.nativeAdapter === 'jianpian' || site.key === 'guazi' || site.key === 'jianpian') {
       list = await searchCongcongSource(site, wd, limit, timeout * 1000, signal)
+    } else if (isNativeAdaptedSite(site)) {
+      list = await searchNativeSite(site, wd, limit, timeout * 1000, signal)
     } else if (site.type === 3 || site.type === 4) {
       list = await searchCms(site, wd, limit, timeout, signal)
     } else if (site.type === 1) {

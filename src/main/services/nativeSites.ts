@@ -26,9 +26,9 @@ function absolute(value: string, base: string): string {
 }
 
 function sourceOrigin(site: Site): string {
-  if (site.key === 'fan_nomi') return NOMI_ORIGIN
-  if (site.key === 'ikanbot') return new URL(site.api || IKANBOT_ORIGIN).origin
-  if (site.key === 'cz4k') return new URL(site.api || CZ4K_ORIGIN).origin
+  if (site.nativeAdapter === 'fan_nomi' || site.key === 'fan_nomi') return NOMI_ORIGIN
+  if (site.nativeAdapter === 'ikanbot' || site.key === 'ikanbot') return new URL(site.api || IKANBOT_ORIGIN).origin
+  if (site.nativeAdapter === 'cz4k' || site.key === 'cz4k') return new URL(site.api || CZ4K_ORIGIN).origin
   throw new Error('该站点没有原生适配器')
 }
 
@@ -403,8 +403,11 @@ async function cz4kDetail(site: Site, id: string): Promise<VodDetail> {
   return finishDetail(vod, lines, firstText($('.module-info-content').text(), $('meta[name="description"]').attr('content')))
 }
 
-export function isNativeAdaptedSite(key: string): boolean {
-  return key === 'fan_nomi' || key === 'ikanbot' || key === 'cz4k'
+export function isNativeAdaptedSite(site: Site | string): boolean {
+  if (typeof site !== 'string') {
+    return site.nativeAdapter === 'fan_nomi' || site.nativeAdapter === 'ikanbot' || site.nativeAdapter === 'cz4k' || isNativeAdaptedSite(site.key)
+  }
+  return site === 'fan_nomi' || site === 'ikanbot' || site === 'cz4k'
 }
 
 export async function searchNativeSite(
@@ -415,12 +418,12 @@ export async function searchNativeSite(
   signal?: AbortSignal
 ): Promise<Vod[]> {
   const origin = sourceOrigin(site)
-  if (site.key === 'ikanbot') {
+  if (site.nativeAdapter === 'ikanbot' || site.key === 'ikanbot') {
     const url = new URL('/search', origin)
     url.searchParams.set('q', keyword)
     return ikanbotSearch(site, await fetchIkanbot(url.href, `${IKANBOT_ORIGIN}/`, timeoutMs, signal), keyword, limit)
   }
-  if (site.key === 'fan_nomi') {
+  if (site.nativeAdapter === 'fan_nomi' || site.key === 'fan_nomi') {
     const url = new URL('/index.php?m=vod-search', origin)
     const header = {
       ...(site.header ?? {}),
@@ -442,8 +445,8 @@ export async function searchNativeSite(
 }
 
 export async function getNativeSiteDetail(site: Site, id: string): Promise<VodDetail> {
-  if (site.key === 'ikanbot') return ikanbotDetail(site, id)
-  if (site.key === 'fan_nomi') {
+  if (site.nativeAdapter === 'ikanbot' || site.key === 'ikanbot') return ikanbotDetail(site, id)
+  if (site.nativeAdapter === 'fan_nomi' || site.key === 'fan_nomi') {
     const url = absolute(id, sourceOrigin(site))
     const header = { ...(site.header ?? {}), 'User-Agent': NOMI_UA }
     return nomiDetail(site, url, await fetchText(url, { header, timeout: site.timeout ?? 15 }))

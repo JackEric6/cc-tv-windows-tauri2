@@ -69,8 +69,8 @@ export async function resolvePlaybackHeaders(siteKey: string, sourceUrl: string,
 
 export async function resolveEpisodeForPlayer(siteKey: string, rawUrl: string): Promise<PlayerResolved> {
   if (!rawUrl.trim()) throw new Error('缺少播放地址')
-  let sourceUrl = await resolveCongcongEpisode(siteKey, rawUrl)
   const site = await getSite(siteKey)
+  let sourceUrl = await resolveCongcongEpisode(siteKey, rawUrl, site)
   if (siteKey.toLowerCase() === 'fan_nomi' && site) sourceUrl = await resolveNomiEpisode(sourceUrl, site)
   if (siteKey === 'cz4k' && !isDirect(sourceUrl)) sourceUrl = await resolveCz4kEpisode(sourceUrl)
   let direct = isDirect(sourceUrl) || (siteKey.toLowerCase() === 'jianpian' && /^https?:\/\//i.test(sourceUrl))
