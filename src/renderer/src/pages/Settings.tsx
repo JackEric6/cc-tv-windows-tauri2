@@ -97,7 +97,7 @@ export function Settings(): JSX.Element {
     try {
       await sendFeedback(content, useApp.getState().info?.version ?? '未知')
       setFeedback('')
-      setFeedbackMessage('反馈已提交，感谢您的建议。')
+      setFeedbackMessage('反馈已保存在本机应用数据目录，感谢您的建议。')
     } catch (error) {
       setFeedbackMessage(`反馈提交失败：${(error as Error).message.replace(/^反馈提交失败：\s*/, '')}`)
     } finally {

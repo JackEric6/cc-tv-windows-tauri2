@@ -36,7 +36,7 @@ export function Sidebar(): JSX.Element {
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
       <div className="sidebar-brand">
-        <div className="sidebar-logo" role="img" aria-label={translate("丛丛影视")}>CC</div>
+        <div className="sidebar-logo" role="img" aria-label={translate("丛丛影视")} />
       </div>
 
       <nav className="sidebar-nav">
