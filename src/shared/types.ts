@@ -345,6 +345,7 @@ export interface DanmakuCue {
 
 export interface PlayerResolved {
   url: string
+  fallbackUrl?: string
   sourceUrl: string
   direct: boolean
   purifyEnabled: boolean

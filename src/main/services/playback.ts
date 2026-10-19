@@ -50,7 +50,7 @@ export async function resolvePlaybackHeaders(siteKey: string, sourceUrl: string,
     for (const key of Object.keys(headers)) {
       if (key.toLowerCase() === 'user-agent') delete headers[key]
     }
-    headers['User-Agent'] = 'KSPlayer'
+    headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36'
   }
   if (site && siteKey.toLowerCase() !== 'guazi' && !hasReferer()) {
     let referer = cmsRefererForApi(site.api)
@@ -83,8 +83,11 @@ export async function resolveEpisodeForPlayer(siteKey: string, rawUrl: string): 
   const headers = await resolvePlaybackHeaders(siteKey, sourceUrl, siteKey.toLowerCase() === 'fan_nomi' ? rawUrl : '')
   const settings = await getSettings()
   const purifyEnabled = shouldPurifyM3u8(siteKey, settings.m3u8Purify)
+  const guaziDirectHls = siteKey.toLowerCase() === 'guazi' &&
+    (/\.m3u8(?:$|[?#])/i.test(sourceUrl) || /\/hls\//i.test(sourceUrl))
   return {
-    url: await prepare(sourceUrl, headers, purifyEnabled),
+    url: guaziDirectHls ? sourceUrl : await prepare(sourceUrl, headers, purifyEnabled),
+    ...(guaziDirectHls ? { fallbackUrl: await prepare(sourceUrl, headers, false) } : {}),
     sourceUrl,
     direct,
     purifyEnabled

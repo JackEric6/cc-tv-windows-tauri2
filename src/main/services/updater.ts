@@ -8,12 +8,19 @@ import { createHash, randomUUID } from 'node:crypto'
 import { networkFetch } from './http'
 
 const REPOSITORY = 'JackEric6/cc-tv-windows-tauri2'
-const GITHUB_API_PROXY = 'https://gh-proxy.com/https://api.github.com'
+const GITHUB_API_PROXIES = [
+  'https://gh-proxy.com/https://api.github.com',
+  'https://gh.llkk.cc/https://api.github.com',
+  'https://ghfast.top/https://api.github.com'
+]
 const GITHUB_RELEASE_PROXIES = [
+  'https://gh.llkk.cc/https://github.com',
   'https://gh-proxy.com/https://github.com',
   'https://ghfast.top/https://github.com'
 ]
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
+let rankedReleaseProxies: string[] = []
+let proxyRankingExpiresAt = 0
 
 interface GitHubRelease {
   tag_name?: unknown
@@ -36,12 +43,60 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-async function fetchReleaseAsset(urls: string[]): Promise<Response> {
+async function probeReleaseProxy(prefix: string, assetPath: string): Promise<{ prefix: string; elapsed: number }> {
+  const started = performance.now()
+  const response = await networkFetch(`${prefix}/${assetPath}`, {
+    headers: { Range: 'bytes=0-524287' },
+    signal: AbortSignal.timeout(6000)
+  })
+  if (response.status !== 206 || !response.body) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new Error(`HTTP ${response.status}`)
+  }
+  if (!/^bytes 0-524287\//i.test(response.headers.get('content-range') ?? '')) {
+    await response.body.cancel().catch(() => undefined)
+    throw new Error('不支持范围测速请求')
+  }
+  const reader = response.body.getReader()
+  try {
+    let received = 0
+    while (received < 524288) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      received += chunk.value?.byteLength ?? 0
+    }
+    if (received < 524288) throw new Error('镜像返回的数据不足')
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  return { prefix, elapsed: performance.now() - started }
+}
+
+async function fastestReleaseProxies(assetPath: string): Promise<string[]> {
+  if (rankedReleaseProxies.length && Date.now() < proxyRankingExpiresAt) return rankedReleaseProxies
+  const probes = await Promise.allSettled(GITHUB_RELEASE_PROXIES.map((prefix) => probeReleaseProxy(prefix, assetPath)))
+  const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+    .sort((left, right) => left.elapsed - right.elapsed)
+  const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [GITHUB_RELEASE_PROXIES[index]] : [])
+  if (!successful.length) throw new Error('所有 GitHub 加速下载地址测速失败')
+  rankedReleaseProxies = [...successful.map((item) => item.prefix), ...failed]
+  proxyRankingExpiresAt = Date.now() + 5 * 60_000
+  return rankedReleaseProxies
+}
+
+async function fetchReleaseAsset(urls: string[], expectedSize: number): Promise<Response> {
   let lastError: Error | undefined
   for (const url of urls) {
     try {
       const response = await networkFetch(url, { signal: AbortSignal.timeout(10 * 60_000) })
-      if (response.ok) return response
+      const lengthHeader = response.headers.get('content-length')
+      const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
+      if (response.ok && response.body && (!Number.isFinite(contentLength) || contentLength === expectedSize)) return response
+      await response.body?.cancel().catch(() => undefined)
+      if (response.ok) {
+        lastError = new Error('安装包响应大小不匹配')
+        continue
+      }
       lastError = new Error(`HTTP ${response.status}`)
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
@@ -51,12 +106,26 @@ async function fetchReleaseAsset(urls: string[]): Promise<Response> {
 }
 
 async function getLatestRelease(): Promise<{ currentVersion: string; latestVersion: string; notes: string; assetName: string; assetSize: number; digest: string }> {
-  const response = await networkFetch(`${GITHUB_API_PROXY}/repos/${REPOSITORY}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-    signal: AbortSignal.timeout(15_000)
-  })
-  if (!response.ok) throw new Error(`检查更新失败：GitHub 返回 HTTP ${response.status}`)
-  const release = await response.json() as GitHubRelease
+  let release: GitHubRelease | undefined
+  let lastError: Error | undefined
+  for (const prefix of GITHUB_API_PROXIES) {
+    try {
+      const response = await networkFetch(`${prefix}/repos/${REPOSITORY}/releases/latest`, {
+        headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+        signal: AbortSignal.timeout(12_000)
+      })
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined)
+        lastError = new Error(`GitHub 返回 HTTP ${response.status}`)
+        continue
+      }
+      release = await response.json() as GitHubRelease
+      break
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+    }
+  }
+  if (!release) throw new Error(`检查更新失败：${lastError?.message ?? '所有 GitHub API 加速地址均失败'}`)
   const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
   const latestVersion = tag.replace(/^v/, '')
   if (!versionParts(latestVersion)) throw new Error('GitHub Release 版本号格式无效')
@@ -96,43 +165,50 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
   const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
-  const response = await fetchReleaseAsset(GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`))
-  if (!response.ok || !response.body) throw new Error(`下载更新失败：HTTP ${response.status}`)
-  const contentLength = Number(response.headers.get('content-length'))
-  if (Number.isFinite(contentLength) && contentLength !== release.assetSize) {
-    throw new Error(`安装包大小不匹配：预期 ${release.assetSize} 字节，收到 ${contentLength} 字节`)
-  }
-  try {
-    let downloaded = 0
-    const progress = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        downloaded += chunk.length
-        onProgress(downloaded, release.assetSize)
-        callback(null, chunk)
-      }
-    })
-    await pipeline(
-      Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
-      progress,
-      createWriteStream(outputPath, { flags: 'w' })
-    )
-    const file = await open(outputPath, 'r')
+  const mirrors = await fastestReleaseProxies(assetPath)
+  let lastError: Error | undefined
+  for (const prefix of mirrors) {
     try {
-      const signature = Buffer.alloc(2)
-      await file.read(signature, 0, 2, 0)
-      const info = await file.stat()
-      if (signature.toString('ascii') !== 'MZ' || info.size !== release.assetSize) {
-        throw new Error('下载的安装包校验失败')
+      const response = await fetchReleaseAsset([`${prefix}/${assetPath}`], release.assetSize)
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+      const lengthHeader = response.headers.get('content-length')
+      const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
+      if (Number.isFinite(contentLength) && contentLength !== release.assetSize) {
+        await response.body.cancel().catch(() => undefined)
+        throw new Error('安装包大小不匹配')
       }
-      const hash = createHash('sha256')
-      for await (const chunk of createReadStream(outputPath)) hash.update(chunk)
-      if (hash.digest('hex') !== release.digest) throw new Error('下载的安装包 SHA-256 校验失败')
-    } finally {
-      await file.close()
+      let downloaded = 0
+      const progress = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          downloaded += chunk.length
+          onProgress(downloaded, release.assetSize)
+          callback(null, chunk)
+        }
+      })
+      await pipeline(
+        Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
+        progress,
+        createWriteStream(outputPath, { flags: 'w' })
+      )
+      const file = await open(outputPath, 'r')
+      try {
+        const signature = Buffer.alloc(2)
+        await file.read(signature, 0, 2, 0)
+        const info = await file.stat()
+        if (signature.toString('ascii') !== 'MZ' || info.size !== release.assetSize) {
+          throw new Error('下载的安装包校验失败')
+        }
+        const hash = createHash('sha256')
+        for await (const chunk of createReadStream(outputPath)) hash.update(chunk)
+        if (hash.digest('hex') !== release.digest) throw new Error('下载的安装包 SHA-256 校验失败')
+      } finally {
+        await file.close()
+      }
+      return outputPath
+    } catch (error) {
+      await rm(outputPath, { force: true }).catch(() => undefined)
+      lastError = error instanceof Error ? error : new Error(String(error))
     }
-  } catch (error) {
-    await rm(outputPath, { force: true }).catch(() => undefined)
-    throw error
   }
-  return outputPath
+  throw new Error(`所有 GitHub 加速下载链路均失败：${lastError?.message ?? '未知错误'}`)
 }

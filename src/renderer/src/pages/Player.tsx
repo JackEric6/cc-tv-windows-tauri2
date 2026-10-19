@@ -536,8 +536,9 @@ export function Player({
       })
     }
 
-    const mount = (url: string, hls: boolean): void => {
+    const mount = (url: string, hls: boolean, fallbackUrl = ''): void => {
       setPlaybackSource({ url, hls })
+      setError('')
       previewFramesRef.current.clear()
       setPreviewFrameSrc('')
       setSeekOverlaySrc('')
@@ -552,7 +553,14 @@ export function Player({
       playerBox.current = player
       playerRef.current = player
       setActivePlayer(player)
+      let hasPlayed = false
       player.on('error', () => {
+        if (fallbackUrl && !hasPlayed) {
+          stopPreviewScanForPlayer()
+          player.dispose()
+          mount(fallbackUrl, hls)
+          return
+        }
         setError(translate('视频加载失败，可能是地址已失效、需要 Referer，或者需要解析接口。'))
       })
       const capturePreviewFrame = (): void => {
@@ -580,6 +588,7 @@ export function Player({
       let stablePlaybackTimer: number | undefined
       let scanSeekTimer: number | undefined
       let scanSeekListener: (() => void) | undefined
+      let mainPlayerWaiting = false
       const previewScannedTargets = new Set<number>()
       const previewScanFailures = new Map<number, number>()
       let activePreviewScanTarget = 0
@@ -593,6 +602,22 @@ export function Player({
           media.removeEventListener('seeked', scanSeekListener)
           media.removeEventListener('loadeddata', scanSeekListener)
         }
+        previewScanPlayer?.dispose()
+        previewScanPlayer = null
+        previewScanHost?.remove()
+        previewScanHost = null
+      }
+      const pausePreviewScan = (): void => {
+        if (previewScanTimer !== undefined) window.clearTimeout(previewScanTimer)
+        if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
+        previewScanTimer = undefined
+        scanSeekTimer = undefined
+        const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
+        if (media && scanSeekListener) {
+          media.removeEventListener('seeked', scanSeekListener)
+          media.removeEventListener('loadeddata', scanSeekListener)
+        }
+        scanSeekListener = undefined
         previewScanPlayer?.dispose()
         previewScanPlayer = null
         previewScanHost?.remove()
@@ -630,6 +655,10 @@ export function Player({
       }
       const scanNextPreviewFrame = (): void => {
         if (previewScanStopped || player.isDisposed()) return
+        if (mainPlayerWaiting || player.paused()) {
+          schedulePreviewScan(1800)
+          return
+        }
         if (!visibleRef.current || previewHoveringRef.current) {
           schedulePreviewScan(900)
           return
@@ -750,15 +779,23 @@ export function Player({
         if (document.fullscreenElement === stageRef.current) scheduleFullscreenHide(FULLSCREEN_PLAY_IDLE_MS)
       })
       player.on('playing', () => {
+        hasPlayed = true
+        mainPlayerWaiting = false
         setIsPlaying(true)
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
-        stablePlaybackTimer = window.setTimeout(startPreviewScan, 3000)
+        stablePlaybackTimer = window.setTimeout(() => {
+          if (previewScanStarted) schedulePreviewScan(1800)
+          else startPreviewScan()
+        }, 3000)
       })
       player.on('waiting', () => {
+        mainPlayerWaiting = true
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         stablePlaybackTimer = undefined
+        if (previewScanStarted) pausePreviewScan()
       })
       player.on('pause', () => {
+        if (previewScanStarted) pausePreviewScan()
         setIsPlaying(false)
         if (document.fullscreenElement !== stageRef.current) return
         setPlayerControlsVisible(true)
@@ -821,7 +858,7 @@ export function Player({
         if (r.sourceUrl !== raw) notes.push(translate('已解析播放地址'))
         if (isHls(r.sourceUrl) && r.purifyEnabled) notes.push(translate('M3U8 净化已开启'))
         setResolveNote(notes.join(' · ') || translate('直连播放'))
-        mount(r.url, isHls(r.sourceUrl))
+        mount(r.url, isHls(r.sourceUrl), r.fallbackUrl)
       } catch (err) {
         if (alive) setError((err as Error).message)
       } finally {
