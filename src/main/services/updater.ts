@@ -19,6 +19,8 @@ const GITHUB_RELEASE_PROXIES = [
   'https://ghfast.top/https://github.com'
 ]
 const GITHUB_RELEASE_ORIGIN = 'https://github.com'
+const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
+const MIRROR_LINK_PROBE_TIMEOUT_MS = 6000
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 
 interface GitHubRelease {
@@ -42,11 +44,11 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-async function probeReleaseUrl(url: string): Promise<{ url: string; elapsed: number }> {
+async function probeReleaseUrl(url: string, timeoutMs: number): Promise<{ url: string; elapsed: number }> {
   const started = performance.now()
   const response = await networkFetch(url, {
     headers: { Range: 'bytes=0-524287' },
-    signal: AbortSignal.timeout(6000)
+    signal: AbortSignal.timeout(timeoutMs)
   })
   if (response.status !== 206 || !response.body) {
     await response.body?.cancel().catch(() => undefined)
@@ -76,7 +78,10 @@ async function fastestReleaseDownloadUrls(assetPath: string): Promise<string[]> 
     ...GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`),
     `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
   ]
-  const probes = await Promise.allSettled(urls.map(probeReleaseUrl))
+  const probes = await Promise.allSettled(urls.map((url, index) => probeReleaseUrl(
+    url,
+    index === urls.length - 1 ? ORIGINAL_LINK_PROBE_TIMEOUT_MS : MIRROR_LINK_PROBE_TIMEOUT_MS
+  )))
   const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
     .sort((left, right) => left.elapsed - right.elapsed)
   const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [urls[index]] : [])
