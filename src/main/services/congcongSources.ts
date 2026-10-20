@@ -332,6 +332,37 @@ async function fetchJianpianOrigin(
   }
 }
 
+async function fetchJianpianText(
+  path: string,
+  query: URLSearchParams,
+  timeout = 8000
+): Promise<string> {
+  const url = new URL(path, `${JIANPIAN_ORIGIN}/`)
+  query.forEach((value, key) => url.searchParams.set(key, value))
+  const response = await networkFetch(url, {
+    headers: {
+      Accept: '*/*',
+      Referer: `${JIANPIAN_ORIGIN}/`,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36'
+    },
+    signal: AbortSignal.timeout(timeout)
+  })
+  if (!response.ok) throw new Error(`荐片播放地址请求失败：HTTP ${response.status}`)
+  return response.text()
+}
+
+function parseJianpianPlayUrlReplacement(script: string): string {
+  const literal = /(?:window\s*\.\s*)?g_sVideoUrlToReplace\s*=\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/s.exec(script)?.[1]
+  if (!literal) return ''
+  if (literal.startsWith('"')) {
+    try { return String(JSON.parse(literal)) } catch { return '' }
+  }
+  return literal.slice(1, -1)
+    .replace(/\\([\\'"/])/g, '$1')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+}
+
 async function fetchJianpianJson(
   path: string,
   query: URLSearchParams,
@@ -623,7 +654,15 @@ async function detailJianpian(site: Site, id: string): Promise<VodDetail> {
   const raw = unwrap(outer, 'data')
   const vod = makeVod(raw, site, 'jianpian')
   vod.vod_pic = resolveImageField(vod.vod_pic)
-  const lines = mapJianpianNormalLines(raw)
+  let lines = mapJianpianNormalLines(raw)
+  if (!lines.length && /^\d+$/.test(id)) {
+    const replacement = await fetchJianpianText('/api/v1/video/play-url', new URLSearchParams({
+      id,
+      _t: String(Date.now())
+    })).then(parseJianpianPlayUrlReplacement)
+    const fallbackLine = parseJianpianPlayUrl(replacement, '普通线路')
+    if (fallbackLine) lines = [fallbackLine]
+  }
   return toDetail(vod, firstText(raw, 'vodcontent', 'description', 'synopsis', 'summary', 'content'), lines)
 }
 

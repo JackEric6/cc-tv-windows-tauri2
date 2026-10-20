@@ -238,8 +238,8 @@ textarea {
 }
 
 .sidebar:not(.collapsed) .nav-item {
-  gap: 7px;
-  padding: 0 8px;
+  gap: 2px;
+  padding: 0 4px;
 }
 
 .nav-item:hover {
@@ -262,15 +262,24 @@ textarea {
 }
 
 .sidebar:not(.collapsed) .nav-item .nav-icon {
-  width: 20px;
+  width: 16px;
 }
 
 .sidebar:not(.collapsed) .nav-label {
   min-width: 0;
   overflow: visible;
   text-overflow: clip;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.2;
+}
+
+:root[lang='en'] .sidebar:not(.collapsed) .nav-item {
+  gap: 7px;
+  padding: 0 8px;
+}
+
+:root[lang='en'] .sidebar:not(.collapsed) .nav-item .nav-icon {
+  width: 20px;
 }
 
 .nav-item .nav-count {

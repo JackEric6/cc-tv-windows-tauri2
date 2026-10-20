@@ -1003,28 +1003,6 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
               <span className="fs-13 text-2">{translate(draft.danmakuEnabled ? '自动匹配' : '关闭')}</span>
             </div>
           </div>
-          <div className="field" style={{ flex: '1 1 220px' }}>
-            <label>{translate("片头跳过（秒）")}</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              max={600}
-              value={draft.introSkipSeconds}
-              onChange={(event) => setDraft({ ...draft, introSkipSeconds: clampInt(event.target.value, 0, 600, 0) })}
-            />
-          </div>
-          <div className="field" style={{ flex: '1 1 220px' }}>
-            <label>{translate("片尾自动切换（秒）")}</label>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              max={600}
-              value={draft.outroSkipSeconds}
-              onChange={(event) => setDraft({ ...draft, outroSkipSeconds: clampInt(event.target.value, 0, 600, 0) })}
-            />
-          </div>
         </div>
 
         <div className="settings-update-row">

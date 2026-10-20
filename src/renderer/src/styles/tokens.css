@@ -62,7 +62,7 @@
 
   /* 尺寸 */
   --topbar-h: 56px;
-  --sidebar-w: 192px;
+  --sidebar-w: 72px;
   --sidebar-w-collapsed: 64px;
 
   /* 间距（密度） */
@@ -83,6 +83,10 @@
   /* 动效 */
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --dur: 160ms;
+}
+
+:root[lang='en'] {
+  --sidebar-w: 128px;
 }
 
 /* 紧凑密度：进一步压缩间距，一屏塞下更多内容 */
