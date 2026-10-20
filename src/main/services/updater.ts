@@ -21,9 +21,10 @@ const GITHUB_RELEASE_PROXIES = [
   'https://ghproxy.net/https://github.com',
   'https://github.moeyy.xyz/https://github.com'
 ]
+const GITHUB_RELEASE_ORIGIN = 'https://github.com'
+const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
+const MIRROR_LINK_PROBE_TIMEOUT_MS = 6000
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
-let rankedReleaseProxies: string[] = []
-let proxyRankingExpiresAt = 0
 
 interface GitHubRelease {
   tag_name?: unknown
@@ -46,11 +47,11 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-async function probeReleaseProxy(prefix: string, assetPath: string): Promise<{ prefix: string; elapsed: number }> {
+async function probeReleaseUrl(url: string, timeoutMs: number): Promise<{ url: string; elapsed: number }> {
   const started = performance.now()
-  const response = await networkFetch(`${prefix}/${assetPath}`, {
+  const response = await networkFetch(url, {
     headers: { Range: 'bytes=0-524287' },
-    signal: AbortSignal.timeout(6000)
+    signal: AbortSignal.timeout(timeoutMs)
   })
   if (response.status !== 206 || !response.body) {
     await response.body?.cancel().catch(() => undefined)
@@ -72,18 +73,23 @@ async function probeReleaseProxy(prefix: string, assetPath: string): Promise<{ p
   } finally {
     await reader.cancel().catch(() => undefined)
   }
-  return { prefix, elapsed: performance.now() - started }
+  return { url, elapsed: performance.now() - started }
 }
 
-async function fastestReleaseProxies(assetPath: string): Promise<string[]> {
-  if (rankedReleaseProxies.length && Date.now() < proxyRankingExpiresAt) return rankedReleaseProxies
-  const probes = await Promise.allSettled(GITHUB_RELEASE_PROXIES.map((prefix) => probeReleaseProxy(prefix, assetPath)))
+async function fastestReleaseDownloadUrls(assetPath: string): Promise<string[]> {
+  const urls = [
+    ...GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`),
+    `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
+  ]
+  const probes = await Promise.allSettled(urls.map((url, index) => probeReleaseUrl(
+    url,
+    index === urls.length - 1 ? ORIGINAL_LINK_PROBE_TIMEOUT_MS : MIRROR_LINK_PROBE_TIMEOUT_MS
+  )))
   const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
     .sort((left, right) => left.elapsed - right.elapsed)
-  const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [GITHUB_RELEASE_PROXIES[index]] : [])
-  rankedReleaseProxies = [...successful.map((item) => item.prefix), ...failed]
-  proxyRankingExpiresAt = Date.now() + 5 * 60_000
-  return rankedReleaseProxies
+  const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [urls[index]] : [])
+  if (!successful.length) throw new Error('GitHub 原始链接和加速链接均测速失败')
+  return [...successful.map((item) => item.url), ...failed]
 }
 
 async function fetchReleaseAsset(urls: string[], expectedSize: number): Promise<Response> {
@@ -142,7 +148,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
   return {
-    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.25',
+    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.26',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName: asset.name as string,
@@ -169,10 +175,9 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
   const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
-  const mirrors = await fastestReleaseProxies(assetPath)
+  const downloadUrls = await fastestReleaseDownloadUrls(assetPath)
   let lastError: Error | undefined
-  const urls = [...mirrors.map((prefix) => `${prefix}/${assetPath}`), `https://github.com/${assetPath}`]
-  for (const url of urls) {
+  for (const url of downloadUrls) {
     try {
       const response = await fetchReleaseAsset([url], release.assetSize)
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
@@ -215,5 +220,5 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
       lastError = error instanceof Error ? error : new Error(String(error))
     }
   }
-  throw new Error(`加速下载地址和 GitHub 原始地址均失败：${lastError?.message ?? '未知错误'}`)
+  throw new Error(`所有 GitHub 下载链路均失败：${lastError?.message ?? '未知错误'}`)
 }
