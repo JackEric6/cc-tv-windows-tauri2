@@ -165,7 +165,7 @@ const english: Record<string, string> = {
   '只看已启用': 'Enabled only',
   '没有匹配的站点': 'No matching sources',
   '开发里程碑': 'Development milestones',
-  '当前版本：1.0.26': 'Current version: 1.0.26',
+  '当前版本：': 'Current version: ',
   '桌面基础与配置管理': 'Desktop foundation & configuration management',
   'Tauri 2 桌面应用、配置导入同步、影视源管理、解析接口和基础设置。': 'Tauri 2 desktop app, source import and sync, source management, parsers, and core settings.',
   '首页、分类与聚合搜索': 'Home, categories & multi-source search',

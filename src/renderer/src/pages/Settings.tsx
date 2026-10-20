@@ -282,7 +282,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       <section className="section">
         <div className="section-head">
           <div className="section-title">{translate("开发里程碑")}</div>
-          <div className="section-more">{translate("当前版本：1.0.26")}</div>
+          <div className="section-more">{translate("当前版本：")}{info?.version ?? ''}</div>
         </div>
         <div className="milestones">
           <div className="milestone done">

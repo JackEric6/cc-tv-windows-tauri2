@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
@@ -6,16 +6,17 @@ import { Toasts } from '@/components/Toasts'
 import { Icon } from '@/components/icons'
 import { useApp } from '@/store/useApp'
 import { setUiLanguage, translate } from '@/i18n'
-import { Home } from '@/pages/Home'
-import { Search } from '@/pages/Search'
-import { Player } from '@/pages/Player'
-import { PlaybackHome } from '@/pages/PlaybackHome'
-import { Library } from '@/pages/Library'
-import { Sites } from '@/pages/Sites'
-import { Settings } from '@/pages/Settings'
-import { Downloads } from '@/pages/Downloads'
-import { OfflinePlayer } from '@/pages/OfflinePlayer'
 import '@/styles/pages.css'
+
+const Home = lazy(() => import('@/pages/Home').then((module) => ({ default: module.Home })))
+const Search = lazy(() => import('@/pages/Search').then((module) => ({ default: module.Search })))
+const Player = lazy(() => import('@/pages/Player').then((module) => ({ default: module.Player })))
+const PlaybackHome = lazy(() => import('@/pages/PlaybackHome').then((module) => ({ default: module.PlaybackHome })))
+const Library = lazy(() => import('@/pages/Library').then((module) => ({ default: module.Library })))
+const Sites = lazy(() => import('@/pages/Sites').then((module) => ({ default: module.Sites })))
+const Settings = lazy(() => import('@/pages/Settings').then((module) => ({ default: module.Settings })))
+const Downloads = lazy(() => import('@/pages/Downloads').then((module) => ({ default: module.Downloads })))
+const OfflinePlayer = lazy(() => import('@/pages/OfflinePlayer').then((module) => ({ default: module.OfflinePlayer })))
 
 const SKIPPED_UPDATE_VERSION_KEY = 'cc-tv-skipped-update-version'
 
@@ -106,32 +107,36 @@ export default function App(): JSX.Element {
         <TopBar />
         <main className="app-content">
           {playerVisible ? null : (
-              <Routes>
-                <Route path="/" element={noSources ? <FirstRun /> : <HomeRoute />} />
-                <Route path="/play" element={<PlaybackHome />} />
-                <Route path="/search" element={<Search />} />
-                <Route path="/detail/:siteKey/:vodId" element={<LegacyDetailRedirect />} />
-                <Route path="/library" element={<Library />} />
-                <Route path="/downloads" element={<Downloads />} />
-                <Route path="/offline/:id" element={<OfflinePlayer />} />
-                <Route path="/sites" element={<Sites />} />
-                <Route path="/settings" element={<Settings onUpdateFound={(update) => {
-                  if (localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY) === update.version) {
-                    notify(`已跳过版本 v${update.version}`, 'info')
-                    return
-                  }
-                  setUpdatePrompt(update)
-                }} />} />
-                <Route path="*" element={noSources ? <FirstRun /> : <Home />} />
-              </Routes>
+              <Suspense fallback={<div className="boot"><span className="spin" /></div>}>
+                <Routes>
+                  <Route path="/" element={noSources ? <FirstRun /> : <HomeRoute />} />
+                  <Route path="/play" element={<PlaybackHome />} />
+                  <Route path="/search" element={<Search />} />
+                  <Route path="/detail/:siteKey/:vodId" element={<LegacyDetailRedirect />} />
+                  <Route path="/library" element={<Library />} />
+                  <Route path="/downloads" element={<Downloads />} />
+                  <Route path="/offline/:id" element={<OfflinePlayer />} />
+                  <Route path="/sites" element={<Sites />} />
+                  <Route path="/settings" element={<Settings onUpdateFound={(update) => {
+                    if (localStorage.getItem(SKIPPED_UPDATE_VERSION_KEY) === update.version) {
+                      notify(`已跳过版本 v${update.version}`, 'info')
+                      return
+                    }
+                    setUpdatePrompt(update)
+                  }} />} />
+                  <Route path="*" element={noSources ? <FirstRun /> : <Home />} />
+                </Routes>
+              </Suspense>
             )}
           {playerLocation ? (
             <div className={`player-persistent-host${playerVisible ? ' visible' : ''}`} aria-hidden={!playerVisible}>
-              <Routes location={playerLocation}>
-                <Route path="/play/:siteKey/:vodId/:lineIndex/:epIndex" element={
-                  <Player visible={playerVisible} autoPlay={isPlayerRoute && (navigationType !== 'POP' || routeState?.autoPlay === true)} />
-                } />
-              </Routes>
+              <Suspense fallback={<div className="boot"><span className="spin" /></div>}>
+                <Routes location={playerLocation}>
+                  <Route path="/play/:siteKey/:vodId/:lineIndex/:epIndex" element={
+                    <Player visible={playerVisible} autoPlay={isPlayerRoute && (navigationType !== 'POP' || routeState?.autoPlay === true)} />
+                  } />
+                </Routes>
+              </Suspense>
             </div>
           ) : null}
         </main>
