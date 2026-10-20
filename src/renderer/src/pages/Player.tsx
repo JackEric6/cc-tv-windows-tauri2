@@ -170,7 +170,6 @@ export function Player({
   const stageRef = useRef<HTMLDivElement>(null)
   const progressPreviewContainerRef = useRef<HTMLDivElement>(null)
   const previewFramesRef = useRef(new Map<number, string>())
-  const seekOverlayTimerRef = useRef<number | undefined>(undefined)
   const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
   const heldSeekKeys = useRef(new Set<string>())
@@ -246,7 +245,6 @@ export function Player({
   const [playbackSource, setPlaybackSource] = useState<{ url: string; hls: boolean } | null>(null)
   const [previewFrameReady, setPreviewFrameReady] = useState(false)
   const [previewFrameSrc, setPreviewFrameSrc] = useState('')
-  const [seekOverlaySrc, setSeekOverlaySrc] = useState('')
   const [playerActionFeedback, setPlayerActionFeedback] = useState('')
   const [systemClock, setSystemClock] = useState(() => new Date())
   const [legacySkipMarkers] = useState<LegacySkipMarkers>(readLegacySkipMarkers)
@@ -555,7 +553,6 @@ export function Player({
       setError('')
       previewFramesRef.current.clear()
       setPreviewFrameSrc('')
-      setSeekOverlaySrc('')
       const player = createVideoPlayer(el, {
         url,
         accent: settings?.accent,
@@ -581,18 +578,6 @@ export function Player({
         const media = player.tech(true)?.el() as HTMLVideoElement | undefined
         const currentTime = Number(player.currentTime())
         if (media) cachePreviewFrame(previewFramesRef.current, media, currentTime)
-      }
-      const getCachedPreviewFrame = (seconds: number): string => {
-        const bucket = Math.floor(seconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
-        const exact = previewFramesRef.current.get(bucket)
-        if (exact) return exact
-        let closest: { time: number; src: string } | undefined
-        for (const [time, src] of previewFramesRef.current) {
-          if (Math.abs(time - seconds) <= PREVIEW_FRAME_BUCKET_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
-            closest = { time, src }
-          }
-        }
-        return closest?.src ?? ''
       }
       let previewScanPlayer: VideoPlayer | null = null
       let previewScanHost: HTMLDivElement | null = null
@@ -832,20 +817,7 @@ export function Player({
           navigateEpisodeRef.current(nextEpisodeRef.current)
         }
       })
-      player.on('seeking', () => {
-        const frame = getCachedPreviewFrame(Number(player.currentTime()) || 0)
-        if (!frame) return
-        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
-        setSeekOverlaySrc(frame)
-        seekOverlayTimerRef.current = window.setTimeout(() => {
-          seekOverlayTimerRef.current = undefined
-          setSeekOverlaySrc('')
-        }, 1800)
-      })
       player.on('seeked', () => {
-        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
-        seekOverlayTimerRef.current = undefined
-        setSeekOverlaySrc('')
         capturePreviewFrame()
       })
       player.on('pause', () => save(true))
@@ -1407,7 +1379,6 @@ export function Player({
   useEffect(() => () => {
     if (previewSeekTimerRef.current !== undefined) window.clearTimeout(previewSeekTimerRef.current)
     if (previewHideTimerRef.current !== undefined) window.clearTimeout(previewHideTimerRef.current)
-    if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
     previewPlayerRef.current?.dispose()
     previewPlayerRef.current = null
   }, [])
@@ -1623,7 +1594,6 @@ export function Player({
               className={`player-stage-inner${keyboardSeeking ? ' keyboard-seeking' : ''}`}
               style={{ '--keyboard-seek-progress': `${fullscreenProgress}%` } as CSSProperties}
             />
-            {seekOverlaySrc ? <img className="player-seek-preview-frame" src={seekOverlaySrc} alt="" aria-hidden="true" /> : null}
             {playerActionFeedback ? <div className="player-action-feedback" aria-live="polite">{playerActionFeedback}</div> : null}
             <DanmakuCanvas
               player={activePlayer}
