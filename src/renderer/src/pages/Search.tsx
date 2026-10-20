@@ -326,7 +326,7 @@ export function Search(): JSX.Element {
               title={r.ok ? `${translate('用时 ')}${r.ms}ms` : r.message}
             >
               <span className={`dot ${r.ok && r.list.length ? 'ok' : r.ok ? '' : 'bad'}`} />
-              {sourceOrdinal(r.siteKey, r.siteName) ? circledOrdinal(sourceOrdinal(r.siteKey, r.siteName)!) : ''}
+              <span className="source-ordinal">{sourceOrdinal(r.siteKey, r.siteName) ? circledOrdinal(sourceOrdinal(r.siteKey, r.siteName)!) : ''}</span>
               <span className="chip-count">{r.list.length}</span>
             </button>
           ))}

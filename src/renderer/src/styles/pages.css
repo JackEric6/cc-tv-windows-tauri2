@@ -340,6 +340,15 @@
   gap: 5px;
 }
 
+.source-ordinal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 13px;
+  font-variant-numeric: normal;
+}
+
 .chip:hover {
   border-color: var(--border-strong);
   background: var(--bg-2);
