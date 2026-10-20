@@ -169,6 +169,8 @@ export function Player({
   const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
   const heldSeekKeys = useRef(new Set<string>())
+  const keyboardSeekTargetRef = useRef<number | null>(null)
+  const keyboardSeekTimerRef = useRef<number | undefined>(undefined)
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
   const autoplayRef = useRef(visible && autoPlay)
@@ -806,7 +808,8 @@ export function Player({
       const updatePlaybackClock = (): void => {
         const position = player.currentTime()
         const duration = player.duration()
-        setPlaybackPosition(typeof position === 'number' && Number.isFinite(position) ? position : 0)
+        const keyboardTarget = keyboardSeekTargetRef.current
+        setPlaybackPosition(keyboardTarget ?? (typeof position === 'number' && Number.isFinite(position) ? position : 0))
         setPlaybackDuration(typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
       }
       player.on('durationchange', updatePlaybackClock)
@@ -1098,6 +1101,17 @@ export function Player({
       if (!(target instanceof HTMLElement)) return false
       return target.isContentEditable || Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'))
     }
+    const scheduleKeyboardSeekSync = (delay = 300): void => {
+      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
+      keyboardSeekTimerRef.current = window.setTimeout(() => {
+        keyboardSeekTimerRef.current = undefined
+        keyboardSeekTargetRef.current = null
+        if (activePlayer && !activePlayer.isDisposed()) {
+          const position = Number(activePlayer.currentTime())
+          setPlaybackPosition(Number.isFinite(position) ? position : 0)
+        }
+      }, delay)
+    }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!visible || !pointerInsidePlayer.current || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker) return
       if (event.altKey || event.ctrlKey || event.metaKey || isTextInput(event.target) || isTextInput(document.activeElement)) return
@@ -1122,11 +1136,13 @@ export function Player({
           }
           const direction = event.key === 'ArrowLeft' ? -1 : 1
           const duration = Number(activePlayer.duration())
-          const current = Number(activePlayer.currentTime()) || 0
+          const current = keyboardSeekTargetRef.current ?? (Number(activePlayer.currentTime()) || 0)
           const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
           const target = Math.max(0, Math.min(limit, current + direction * 10))
-          seekVideoPlayer(activePlayer, target)
+          keyboardSeekTargetRef.current = target
+          activePlayer.currentTime(target)
           setPlaybackPosition(target)
+          scheduleKeyboardSeekSync(event.repeat ? 500 : 300)
           flashPlayerAction(`${direction < 0 ? '−' : '+'}10 秒`)
         } else {
           const direction = event.key === 'ArrowUp' ? 1 : -1
@@ -1140,10 +1156,12 @@ export function Player({
     const onKeyUp = (event: KeyboardEvent): void => {
       if (!heldSeekKeys.current.delete(event.key)) return
       scheduleInlineControlsHide(300)
+      scheduleKeyboardSeekSync(300)
     }
     const onBlur = (): void => {
       heldSeekKeys.current.clear()
       scheduleInlineControlsHide(300)
+      if (keyboardSeekTargetRef.current !== null) scheduleKeyboardSeekSync(300)
     }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
@@ -1163,6 +1181,7 @@ export function Player({
     window.addEventListener('blur', onBlur)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
+      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
