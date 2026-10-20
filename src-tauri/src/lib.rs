@@ -43,62 +43,6 @@ struct BackendProcess {
 
 struct PendingInstaller(Mutex<Option<PathBuf>>);
 
-#[cfg(windows)]
-pub fn run_update_helper(installer: PathBuf) -> i32 {
-    use std::os::windows::process::CommandExt;
-
-    let filename = installer.file_name().and_then(|name| name.to_str()).unwrap_or_default();
-    if installer.parent() != Some(std::env::temp_dir().as_path())
-        || !filename.starts_with("cc-tv-windows-tauri2-update-")
-        || installer.extension().and_then(|value| value.to_str()) != Some("exe")
-    {
-        show_update_message("更新程序路径无效。", 0x10);
-        return 2;
-    }
-
-    let status = Command::new(&installer)
-        .arg("/S")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .creation_flags(0x08000000)
-        .spawn()
-        .and_then(|mut child| child.wait());
-    let _ = fs::remove_file(&installer);
-
-    match status {
-        Ok(status) if status.success() => {
-            show_update_message("更新已安装完成。", 0x40);
-            0
-        }
-        Ok(status) => {
-            show_update_message(&format!("更新安装失败，错误代码：{}", status), 0x10);
-            1
-        }
-        Err(error) => {
-            show_update_message(&format!("更新安装失败：{error}"), 0x10);
-            1
-        }
-    }
-}
-
-#[cfg(windows)]
-fn show_update_message(message: &str, kind: u32) {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-
-    #[link(name = "user32")]
-    extern "system" {
-        fn MessageBoxW(window: *mut std::ffi::c_void, text: *const u16, caption: *const u16, kind: u32) -> i32;
-    }
-
-    let text: Vec<u16> = OsStr::new(message).encode_wide().chain(Some(0)).collect();
-    let caption: Vec<u16> = OsStr::new("丛丛影视").encode_wide().chain(Some(0)).collect();
-    unsafe {
-        MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), kind);
-    }
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BackendInfo {
@@ -530,17 +474,42 @@ pub fn run() {
                         #[cfg(windows)]
                         {
                             use std::os::windows::process::CommandExt;
-                            if let Ok(executable) = std::env::current_exe() {
-                                let mut command = Command::new(executable);
+                            let script_path = std::env::temp_dir().join(format!(
+                                "cc-tv-update-{}.ps1",
+                                uuid::Uuid::new_v4().simple()
+                            ));
+                            let script = r#"$installer = $args[0]
+$scriptPath = $args[1]
+try {
+  $result = Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+  Add-Type -AssemblyName System.Windows.Forms
+  if ($result.ExitCode -eq 0) {
+    [System.Windows.Forms.MessageBox]::Show('更新已安装完成。', '丛丛影视', 'OK', 'Information') | Out-Null
+  } else {
+    [System.Windows.Forms.MessageBox]::Show("更新安装失败，错误代码：$($result.ExitCode)", '丛丛影视', 'OK', 'Error') | Out-Null
+  }
+} catch {
+  Add-Type -AssemblyName System.Windows.Forms
+  [System.Windows.Forms.MessageBox]::Show("更新安装失败：$($_.Exception.Message)", '丛丛影视', 'OK', 'Error') | Out-Null
+} finally {
+  Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue
+}"#;
+                            let mut script_contents = vec![0xEF, 0xBB, 0xBF];
+                            script_contents.extend_from_slice(script.as_bytes());
+                            if fs::write(&script_path, script_contents).is_ok() {
+                                let mut command = Command::new("powershell.exe");
                                 command
-                                    .arg("--complete-update")
+                                    .args(["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File"])
+                                    .arg(&script_path)
                                     .arg(&path)
+                                    .arg(&script_path)
                                     .stdin(Stdio::null())
                                     .stdout(Stdio::null())
                                     .stderr(Stdio::null())
                                     .creation_flags(0x08000000);
                                 if command.spawn().is_err() {
-                                    let _ = fs::remove_file(&path);
+                                    let _ = fs::remove_file(&script_path);
                                 }
                             }
                         }
