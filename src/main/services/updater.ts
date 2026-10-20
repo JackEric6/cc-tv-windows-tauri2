@@ -18,9 +18,8 @@ const GITHUB_RELEASE_PROXIES = [
   'https://gh-proxy.com/https://github.com',
   'https://ghfast.top/https://github.com'
 ]
+const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
-let rankedReleaseProxies: string[] = []
-let proxyRankingExpiresAt = 0
 
 interface GitHubRelease {
   tag_name?: unknown
@@ -43,9 +42,9 @@ function compareVersions(left: string, right: string): number {
   return 0
 }
 
-async function probeReleaseProxy(prefix: string, assetPath: string): Promise<{ prefix: string; elapsed: number }> {
+async function probeReleaseUrl(url: string): Promise<{ url: string; elapsed: number }> {
   const started = performance.now()
-  const response = await networkFetch(`${prefix}/${assetPath}`, {
+  const response = await networkFetch(url, {
     headers: { Range: 'bytes=0-524287' },
     signal: AbortSignal.timeout(6000)
   })
@@ -69,19 +68,20 @@ async function probeReleaseProxy(prefix: string, assetPath: string): Promise<{ p
   } finally {
     await reader.cancel().catch(() => undefined)
   }
-  return { prefix, elapsed: performance.now() - started }
+  return { url, elapsed: performance.now() - started }
 }
 
-async function fastestReleaseProxies(assetPath: string): Promise<string[]> {
-  if (rankedReleaseProxies.length && Date.now() < proxyRankingExpiresAt) return rankedReleaseProxies
-  const probes = await Promise.allSettled(GITHUB_RELEASE_PROXIES.map((prefix) => probeReleaseProxy(prefix, assetPath)))
+async function fastestReleaseDownloadUrls(assetPath: string): Promise<string[]> {
+  const urls = [
+    ...GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`),
+    `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
+  ]
+  const probes = await Promise.allSettled(urls.map(probeReleaseUrl))
   const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
     .sort((left, right) => left.elapsed - right.elapsed)
-  const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [GITHUB_RELEASE_PROXIES[index]] : [])
-  if (!successful.length) throw new Error('所有 GitHub 加速下载地址测速失败')
-  rankedReleaseProxies = [...successful.map((item) => item.prefix), ...failed]
-  proxyRankingExpiresAt = Date.now() + 5 * 60_000
-  return rankedReleaseProxies
+  const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [urls[index]] : [])
+  if (!successful.length) throw new Error('GitHub 原始链接和加速链接均测速失败')
+  return [...successful.map((item) => item.url), ...failed]
 }
 
 async function fetchReleaseAsset(urls: string[], expectedSize: number): Promise<Response> {
@@ -138,7 +138,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
   return {
-    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.25',
+    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.27',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName,
@@ -165,11 +165,11 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
   const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
-  const mirrors = await fastestReleaseProxies(assetPath)
+  const downloadUrls = await fastestReleaseDownloadUrls(assetPath)
   let lastError: Error | undefined
-  for (const prefix of mirrors) {
+  for (const url of downloadUrls) {
     try {
-      const response = await fetchReleaseAsset([`${prefix}/${assetPath}`], release.assetSize)
+      const response = await fetchReleaseAsset([url], release.assetSize)
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
       const lengthHeader = response.headers.get('content-length')
       const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
