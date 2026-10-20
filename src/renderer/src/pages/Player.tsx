@@ -25,7 +25,7 @@ const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
 const PREVIEW_FRAME_INTERVAL_SECONDS = 20
-const PREVIEW_SCAN_START_DELAY_MS = 60_000
+const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
@@ -600,7 +600,6 @@ export function Player({
       let stablePlaybackTimer: number | undefined
       let scanSeekTimer: number | undefined
       let scanSeekListener: (() => void) | undefined
-      let mainPlayerWaiting = false
       const previewScannedTargets = new Set<number>()
       const previewScanFailures = new Map<number, number>()
       let activePreviewScanTarget = 0
@@ -614,22 +613,6 @@ export function Player({
           media.removeEventListener('seeked', scanSeekListener)
           media.removeEventListener('loadeddata', scanSeekListener)
         }
-        previewScanPlayer?.dispose()
-        previewScanPlayer = null
-        previewScanHost?.remove()
-        previewScanHost = null
-      }
-      const pausePreviewScan = (): void => {
-        if (previewScanTimer !== undefined) window.clearTimeout(previewScanTimer)
-        if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
-        previewScanTimer = undefined
-        scanSeekTimer = undefined
-        const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
-        if (media && scanSeekListener) {
-          media.removeEventListener('seeked', scanSeekListener)
-          media.removeEventListener('loadeddata', scanSeekListener)
-        }
-        scanSeekListener = undefined
         previewScanPlayer?.dispose()
         previewScanPlayer = null
         previewScanHost?.remove()
@@ -667,11 +650,7 @@ export function Player({
       }
       const scanNextPreviewFrame = (): void => {
         if (previewScanStopped || player.isDisposed()) return
-        if (mainPlayerWaiting || player.paused()) {
-          schedulePreviewScan(1800)
-          return
-        }
-        if (!visibleRef.current || previewHoveringRef.current) {
+        if (previewHoveringRef.current) {
           schedulePreviewScan(900)
           return
         }
@@ -792,7 +771,6 @@ export function Player({
       })
       player.on('playing', () => {
         hasPlayed = true
-        mainPlayerWaiting = false
         setIsPlaying(true)
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         stablePlaybackTimer = window.setTimeout(() => {
@@ -801,13 +779,14 @@ export function Player({
         }, PREVIEW_SCAN_START_DELAY_MS)
       })
       player.on('waiting', () => {
-        mainPlayerWaiting = true
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         stablePlaybackTimer = undefined
-        if (previewScanStarted) pausePreviewScan()
       })
       player.on('pause', () => {
-        if (previewScanStarted) pausePreviewScan()
+        if (!previewScanStarted && stablePlaybackTimer !== undefined) {
+          window.clearTimeout(stablePlaybackTimer)
+          stablePlaybackTimer = undefined
+        }
         setIsPlaying(false)
         if (document.fullscreenElement !== stageRef.current) return
         setPlayerControlsVisible(true)
