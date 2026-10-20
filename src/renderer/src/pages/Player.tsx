@@ -167,6 +167,7 @@ export function Player({
   const seekOverlayTimerRef = useRef<number | undefined>(undefined)
   const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
+  const heldSeekKeys = useRef(new Set<string>())
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
   const autoplayRef = useRef(visible && autoPlay)
@@ -315,12 +316,12 @@ export function Player({
     inlineControlsTimer.current = undefined
   }, [])
 
-  const scheduleInlineControlsHide = useCallback((): void => {
+  const scheduleInlineControlsHide = useCallback((delay = INLINE_CONTROL_IDLE_MS): void => {
     clearInlineControlsTimer()
     inlineControlsTimer.current = window.setTimeout(() => {
       inlineControlsTimer.current = undefined
       setPlayerControlsVisible(false)
-    }, INLINE_CONTROL_IDLE_MS)
+    }, delay)
   }, [clearInlineControlsTimer])
 
   const scheduleFullscreenHide = useCallback((delay: number): void => {
@@ -1113,6 +1114,11 @@ export function Player({
         event.stopImmediatePropagation()
         if (!activePlayer || activePlayer.isDisposed()) return
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          if (event.repeat) {
+            heldSeekKeys.current.add(event.key)
+            setPlayerControlsVisible(true)
+            scheduleInlineControlsHide(300)
+          }
           const direction = event.key === 'ArrowLeft' ? -1 : 1
           const duration = Number(activePlayer.duration())
           const current = Number(activePlayer.currentTime()) || 0
@@ -1130,6 +1136,14 @@ export function Player({
         }
       }
     }
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (!heldSeekKeys.current.delete(event.key)) return
+      scheduleInlineControlsHide(300)
+    }
+    const onBlur = (): void => {
+      heldSeekKeys.current.clear()
+      scheduleInlineControlsHide(300)
+    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1144,12 +1158,16 @@ export function Player({
       flashPlayerAction(`音量 ${Math.round(next * 100)}%`)
     }
     window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
       stage?.removeEventListener('wheel', onWheel)
     }
-  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction])
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
@@ -1499,29 +1517,27 @@ export function Player({
       </div>
 
       <div className="player-layout">
-        <div className={`player-main${playerControlsVisible || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker ? '' : ' controls-hidden'}`}
-          onPointerEnter={(event) => {
-            if (event.pointerType === 'mouse') pointerInsidePlayer.current = true
-            updateControlsFromPointer(event)
-          }}
-          onPointerLeave={(event) => {
-            if (event.pointerType === 'mouse') {
+        <div className={`player-main${playerControlsVisible || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker ? '' : ' controls-hidden'}`}>
+          <div
+            ref={stageRef}
+            className={`player-stage${isFullscreen ? ' is-fullscreen' : ''}`}
+            onPointerEnter={(event) => {
+              pointerInsidePlayer.current = event.pointerType !== 'touch'
+              updateControlsFromPointer(event)
+            }}
+            onPointerLeave={(event) => {
+              if (event.pointerType === 'touch') return
               pointerInsidePlayer.current = false
               clearFullscreenTimer()
               clearInlineControlsTimer()
               setPlayerControlsVisible(false)
-            }
-          }}
-          onPointerMove={updateControlsFromPointer}
-          onPointerUp={(event) => {
-            if (event.pointerType !== 'mouse') {
-              scheduleFullscreenHide(activePlayer?.paused() ? FULLSCREEN_PAUSE_PEEK_MS : 3200)
-            }
-          }}
-        >
-          <div
-            ref={stageRef}
-            className={`player-stage${isFullscreen ? ' is-fullscreen' : ''}`}
+            }}
+            onPointerMove={updateControlsFromPointer}
+            onPointerUp={(event) => {
+              if (event.pointerType !== 'mouse') {
+                scheduleFullscreenHide(activePlayer?.paused() ? FULLSCREEN_PAUSE_PEEK_MS : 3200)
+              }
+            }}
             onPointerDown={startHeldPlaybackRate}
             onClickCapture={(event) => {
               if (!suppressHoldClickRef.current) return

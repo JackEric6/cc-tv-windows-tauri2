@@ -919,10 +919,9 @@ export const useApp = create<AppState>((set, get) => ({
 function applyTheme(settings: AppSettings): void {
   const root = document.documentElement
   root.dataset.theme = settings.theme ?? 'light'
-  if (settings.accent) {
-    root.style.setProperty('--accent', settings.accent)
-    root.style.setProperty('--accent-hover', shade(settings.accent, -12))
-  }
+  const accent = '#6A3DE8'
+  root.style.setProperty('--accent', accent)
+  root.style.setProperty('--accent-hover', shade(accent, -12))
   root.dataset.density = settings.density
 }
 

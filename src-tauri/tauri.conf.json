@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["../build/icon.ico", "../build/icon.png"],
+    "icon": ["../build/new_ico/cc-tv-windows-icon-1.0.26.ico"],
     "resources": {
       "../dist/backend.cjs": "backend.cjs",
       "resources/node.exe": "node.exe",

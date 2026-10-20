@@ -968,10 +968,10 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
                 className="input"
                 type="color"
                 style={{ width: 48, padding: 2 }}
-                value={draft.accent}
-                onChange={(e) => setDraft({ ...draft, accent: e.target.value })}
+                value="#6A3DE8"
+                disabled
               />
-              <span className="mono fs-12">{draft.accent}</span>
+              <span className="mono fs-12">#6A3DE8</span>
             </div>
           </div>
           <div className="settings-subhead">{translate("播放体验")}</div>
