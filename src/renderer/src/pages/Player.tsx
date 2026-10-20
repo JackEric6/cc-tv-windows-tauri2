@@ -24,7 +24,9 @@ const FULLSCREEN_CONTROL_HOVER_HEIGHT = 112
 const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
-const PREVIEW_FRAME_INTERVAL_SECONDS = 20
+const PREVIEW_FRAME_BUCKET_SECONDS = 10
+const PREVIEW_INITIAL_SCAN_INTERVAL_SECONDS = 20
+const PREVIEW_REFINEMENT_SCAN_INTERVAL_SECONDS = 10
 const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
@@ -85,7 +87,7 @@ function formatMarkerTime(seconds: number): string {
 
 function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number, bucketSeconds = seconds): string | null {
   if (media.readyState < 2 || media.videoWidth <= 0 || media.videoHeight <= 0 || !Number.isFinite(seconds)) return null
-  const bucket = Math.floor(bucketSeconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+  const bucket = Math.floor(bucketSeconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
   const cached = cache.get(bucket)
   if (cached) return cached
   try {
@@ -581,12 +583,12 @@ export function Player({
         if (media) cachePreviewFrame(previewFramesRef.current, media, currentTime)
       }
       const getCachedPreviewFrame = (seconds: number): string => {
-        const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+        const bucket = Math.floor(seconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
         const exact = previewFramesRef.current.get(bucket)
         if (exact) return exact
         let closest: { time: number; src: string } | undefined
         for (const [time, src] of previewFramesRef.current) {
-          if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
+          if (Math.abs(time - seconds) <= PREVIEW_FRAME_BUCKET_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
             closest = { time, src }
           }
         }
@@ -596,6 +598,7 @@ export function Player({
       let previewScanHost: HTMLDivElement | null = null
       let previewScanStopped = false
       let previewScanStarted = false
+      let previewScanRefining = false
       let previewScanTimer: number | undefined
       let stablePlaybackTimer: number | undefined
       let scanSeekTimer: number | undefined
@@ -659,12 +662,20 @@ export function Player({
           schedulePreviewScan(900)
           return
         }
+        const interval = previewScanRefining
+          ? PREVIEW_REFINEMENT_SCAN_INTERVAL_SECONDS
+          : PREVIEW_INITIAL_SCAN_INTERVAL_SECONDS
         let target = 0
         while (target < duration && (previewFramesRef.current.has(target) || previewScannedTargets.has(target))) {
-          target += PREVIEW_FRAME_INTERVAL_SECONDS
+          target += interval
         }
         if (target >= duration) {
-          stopPreviewScan()
+          if (!previewScanRefining) {
+            previewScanRefining = true
+            schedulePreviewScan(0)
+          } else {
+            stopPreviewScan()
+          }
           return
         }
         activePreviewScanTarget = target
@@ -1280,12 +1291,12 @@ export function Player({
     }
     previewHoveringRef.current = true
     previewLastXRef.current = x
-    const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+    const bucket = Math.floor(seconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
     let frame = previewFramesRef.current.get(bucket) ?? ''
     if (!frame) {
       let closest: { time: number; src: string } | undefined
       for (const [time, src] of previewFramesRef.current) {
-        if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
+        if (Math.abs(time - seconds) <= PREVIEW_FRAME_BUCKET_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
           closest = { time, src }
         }
       }
