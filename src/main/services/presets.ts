@@ -61,10 +61,8 @@ const CONGCONG_SITES = [
       ? 'https://caiji.xgzyapi.com/api.php/provide/vod/from/xiguam3u8/'
       : key === 'guazi'
         ? 'https://api.anctjd.com/App/Index/findMoreVod'
-        : key === 'jianpian'
-          ? 'https://fan123.hzhnl.com/api/v2/search/videoV2'
-          : String(raw.api ?? '')
-    const special = key === 'guazi' || key === 'jianpian'
+        : String(raw.api ?? '')
+    const special = key === 'guazi'
     return {
       ...raw,
       enabled: raw.enabled ?? true,
@@ -179,7 +177,7 @@ function mergeSites(existing: Record<string, unknown>[], additions: Record<strin
 
 CONGCONG_PRESET.config.sites = mergeSites(CONGCONG_PRESET.config.sites, PUBLIC_CMS.config.sites)
 CONGCONG_PRESET.siteCount = CONGCONG_PRESET.config.sites.length
-CONGCONG_PRESET.desc = `内置 ${CONGCONG_PRESET.siteCount} 个影视源，包含西瓜、瓜子、荐片、公开采集接口及 Android 1.0.74 迁移源。`
+CONGCONG_PRESET.desc = `内置 ${CONGCONG_PRESET.siteCount} 个影视源，包含西瓜、瓜子、公开采集接口及 Android 1.0.74 迁移源。`
 
 export function listPresets(): SourcePresetInfo[] {
   return SOURCE_PRESETS.map(({ id, name, desc, siteCount }) => ({
@@ -248,7 +246,7 @@ async function migrateBundledSources(): Promise<boolean> {
     const config = JSON.parse(readFileSync(source.url, 'utf8')) as Record<string, unknown>
     if (!Array.isArray(config.sites)) return false
     const currentSites = config.sites as Record<string, unknown>[]
-    const normalizedSites = currentSites.map((site) => {
+    const normalizedSites = currentSites.filter((site) => String(site.key ?? '').trim().toLowerCase() !== 'jianpian').map((site) => {
       const key = String(site.key ?? '').trim().toLowerCase()
       const knownAndroidSource = isAndroidSource(key) || key === 'subo'
       const searchable = isSearchableByDefault(key)
@@ -274,4 +272,3 @@ async function migrateBundledSources(): Promise<boolean> {
     return false
   }
 }
-

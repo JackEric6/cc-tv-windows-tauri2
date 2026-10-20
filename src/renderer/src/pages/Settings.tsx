@@ -83,11 +83,11 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       setFeedbackMessage(translate('18+ 内容过滤已关闭，退出软件后将恢复开启'))
       return
     }
-    const sourceKey = ({ '7701': 'guazi', '8801': 'xgzy', '9901': 'jianpian' } as Record<string, string>)[content]
+    const sourceKey = ({ '7701': 'guazi', '8801': 'xgzy' } as Record<string, string>)[content]
     if (sourceKey) {
       const source = sites.find((item) => item.key === sourceKey && item.enabled && item.homeEnabled && !item.unsupported)
       if (!source) {
-        setFeedbackMessage(`当前没有启用的${sourceKey === 'guazi' ? '瓜子' : sourceKey === 'xgzy' ? '西瓜' : '荐片'}源`)
+        setFeedbackMessage(`当前没有启用的${sourceKey === 'guazi' ? '瓜子' : '西瓜'}源`)
         return
       }
       await updateSettings({ homeSourceKey: sourceKey as AppSettings['homeSourceKey'] })
@@ -865,7 +865,6 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
             >
               <option value="guazi">瓜子</option>
               <option value="xgzy">西瓜</option>
-              <option value="jianpian">荐片</option>
               <option value="dyttzy">天堂</option>
               <option value="ffzy">非凡</option>
               <option value="lzi">量子</option>

@@ -60,7 +60,8 @@ jobs:
           Get-ChildItem -LiteralPath $portableInstall -Force | Copy-Item -Destination $portableStage -Recurse -Force
           Remove-Item -LiteralPath (Join-Path $portableStage 'uninstall.exe') -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath (Join-Path $portableStage 'uninstall.dat') -Force -ErrorAction SilentlyContinue
-          foreach ($requiredFile in @('congcong-tv-windows-tauri2.exe', 'backend.cjs', 'node.exe', 'cc-tv-windows-icon-1.0.26.ico')) {
+          Get-ChildItem -LiteralPath $portableStage -Recurse -File -Filter '*.ico' | Remove-Item -Force
+          foreach ($requiredFile in @('congcong-tv-windows-tauri2.exe', 'backend.cjs', 'node.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $portableStage $requiredFile))) {
               throw "Portable package is missing $requiredFile"
             }
@@ -68,6 +69,14 @@ jobs:
           $portableName = "cc-tv-windows-tauri2-$version-portable.zip"
           $portableZip = Join-Path $portableOutput $portableName
           Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableZip -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($portableZip)
+          try {
+            $iconEntry = $archive.Entries | Where-Object { $_.FullName -match '(?i)\.ico$' } | Select-Object -First 1
+            if ($iconEntry) { throw "Portable archive must not include icon files: $($iconEntry.FullName)" }
+          } finally {
+            $archive.Dispose()
+          }
 
           $releaseAssets = 'src-tauri/target/release/bundle/release-assets'
           New-Item -ItemType Directory -Force -Path $releaseAssets | Out-Null

@@ -3,6 +3,7 @@ import { DEFAULT_UA } from './http'
 import { readStore, writeStore } from './store'
 
 const NAME = 'settings'
+const HOME_SOURCE_KEYS = new Set(['guazi', 'xgzy', 'dyttzy', 'ffzy', 'lzi', 'bfzy'])
 
 export const DEFAULT_SETTINGS: AppSettings = {
   settingsVersion: 5,
@@ -38,6 +39,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export async function getSettings(): Promise<AppSettings> {
   const stored = await readStore<Partial<AppSettings>>(NAME, {})
+  const storedHomeSourceKey = String(stored.homeSourceKey ?? '')
+  const homeSourceKey = HOME_SOURCE_KEYS.has(storedHomeSourceKey)
+    ? storedHomeSourceKey as AppSettings['homeSourceKey']
+    : DEFAULT_SETTINGS.homeSourceKey
+  const needsHomeSourceMigration = stored.homeSourceKey !== undefined && storedHomeSourceKey !== homeSourceKey
   const storedVersion = stored.settingsVersion ?? 0
   const needsMigration = storedVersion < 5
   const storedConcurrency = Number(stored.concurrency)
@@ -46,6 +52,7 @@ export async function getSettings(): Promise<AppSettings> {
     ...DEFAULT_SETTINGS,
     ...stored,
     settingsVersion: 5,
+    homeSourceKey,
     concurrency: storedVersion < 3 && stored.concurrency === 8
       ? 10
       : Number.isFinite(storedConcurrency)
@@ -66,7 +73,7 @@ export async function getSettings(): Promise<AppSettings> {
     window: { ...DEFAULT_SETTINGS.window, ...(stored.window ?? {}) },
     ai: { ...DEFAULT_SETTINGS.ai, ...(stored.ai ?? {}) }
   }
-  if (needsMigration || stored.filterAdult !== true) writeStore(NAME, settings)
+  if (needsMigration || needsHomeSourceMigration || stored.filterAdult !== true) writeStore(NAME, settings)
   return settings
 }
 

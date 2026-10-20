@@ -133,7 +133,7 @@ function fallbackHomeKeys(homeSourceKey: string): string[] {
   if (homeSourceKey === 'guazi' || GUAZI_REPLACEMENT_SOURCES.has(homeSourceKey)) {
     return ['xgzy', 'dyttzy', 'ffzy', 'lzi', 'bfzy']
   }
-  if (homeSourceKey === 'xgzy') return ['jianpian']
+  if (homeSourceKey === 'xgzy') return ['guazi', 'dyttzy', 'ffzy', 'lzi', 'bfzy']
   return ['guazi', 'xgzy']
 }
 
