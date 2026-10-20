@@ -31,6 +31,7 @@ const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
+const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 18
 const KEYBOARD_SEEK_UPDATE_INTERVAL_MS = 33
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -38,6 +39,16 @@ const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 type SkipMarkerKey = 'introSkipSeconds' | 'outroSkipAtSeconds'
 type SavedSkipMarkers = Record<string, Partial<Record<SkipMarkerKey, number>>>
 type LegacySkipMarkers = Record<string, Partial<Record<'introSkipSeconds' | 'outroSkipSeconds', number>>>
+
+function getKeyboardSeekTarget(start: number, direction: number, elapsedMs: number, limit: number): number {
+  const elapsedSeconds = Math.max(0, elapsedMs / 1000)
+  const distance = elapsedMs < KEYBOARD_SEEK_TAP_THRESHOLD_MS
+    ? 10
+    : 10 + KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND * (elapsedSeconds - KEYBOARD_SEEK_TAP_THRESHOLD_MS / 1000) +
+      0.5 * KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED *
+      (elapsedSeconds - KEYBOARD_SEEK_TAP_THRESHOLD_MS / 1000) ** 2
+  return Math.max(0, Math.min(limit, start + direction * distance))
+}
 
 function readSkipMarkers(): SavedSkipMarkers {
   try {
@@ -1094,10 +1105,7 @@ export function Player({
       const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
       const elapsed = performance.now() - keyboardSeekStartedAtRef.current
       const start = keyboardSeekStartPositionRef.current
-      const target = elapsed < KEYBOARD_SEEK_TAP_THRESHOLD_MS
-        ? Math.max(0, Math.min(limit, start + direction * 10))
-        : Math.max(0, Math.min(limit,
-          start + direction * elapsed / 1000 * KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND))
+      const target = getKeyboardSeekTarget(start, direction, elapsed, limit)
       keyboardSeekDirectionRef.current = 0
       keyboardSeekTargetRef.current = target
       activePlayer.currentTime(target)
@@ -1129,8 +1137,12 @@ export function Player({
         const duration = Number(activePlayer.duration())
         const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
         const elapsed = (performance.now() - keyboardSeekStartedAtRef.current) / 1000
-        const target = Math.max(0, Math.min(limit,
-          keyboardSeekStartPositionRef.current + keyboardSeekDirectionRef.current * elapsed * KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND))
+        const target = getKeyboardSeekTarget(
+          keyboardSeekStartPositionRef.current,
+          keyboardSeekDirectionRef.current,
+          elapsed * 1000,
+          limit
+        )
         keyboardSeekTargetRef.current = target
         setPlaybackPosition(target)
       }, KEYBOARD_SEEK_UPDATE_INTERVAL_MS)
