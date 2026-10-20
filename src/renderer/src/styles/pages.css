@@ -1409,6 +1409,11 @@
   background-color: var(--video-accent, #6A3DE8);
 }
 
+.player-stage-inner.keyboard-seeking .video-js .vjs-play-progress {
+  width: var(--keyboard-seek-progress) !important;
+  transition: none !important;
+}
+
 .player-stage .video-js .vjs-control-bar {
   display: flex;
   justify-content: flex-start;
