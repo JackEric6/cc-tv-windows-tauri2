@@ -25,6 +25,7 @@ const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
 const PREVIEW_FRAME_INTERVAL_SECONDS = 20
+const PREVIEW_SCAN_START_DELAY_MS = 60_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -789,7 +790,7 @@ export function Player({
         stablePlaybackTimer = window.setTimeout(() => {
           if (previewScanStarted) schedulePreviewScan(1800)
           else startPreviewScan()
-        }, 3000)
+        }, PREVIEW_SCAN_START_DELAY_MS)
       })
       player.on('waiting', () => {
         mainPlayerWaiting = true
