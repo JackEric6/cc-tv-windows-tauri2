@@ -121,5 +121,7 @@ jobs:
               '- cc-tv-windows-tauri2-1.0.26-setup-release.exe 为安装版；cc-tv-windows-tauri2-1.0.26-portable-release.zip 为免安装绿色版，压缩包不包含独立 ICO 文件。'
             )
             $notes = $body + "`n`n" + $marker + "`n" + ($append -join "`n")
-            gh release edit $tag --repo '${{ github.repository }}' --notes $notes
+            $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+            Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+            gh release edit $tag --repo '${{ github.repository }}' --notes-file $notesPath
           }
