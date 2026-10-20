@@ -47,7 +47,7 @@ jobs:
           $installerDirectory = 'src-tauri/target/release/bundle/nsis'
           $installer = Get-ChildItem "$installerDirectory/*.exe" | Select-Object -First 1
           if (-not $installer) { throw 'Tauri installer was not created' }
-          $installerName = "cc-tv-windows-tauri2-$version-setup.exe"
+          $installerName = "cc-tv-windows-tauri2-$version-setup-release.exe"
           Rename-Item -LiteralPath $installer.FullName -NewName $installerName
 
           $portableInstall = Join-Path $env:RUNNER_TEMP 'cc-tv-windows-tauri2-portable-install'
@@ -66,7 +66,7 @@ jobs:
               throw "Portable package is missing $requiredFile"
             }
           }
-          $portableName = "cc-tv-windows-tauri2-$version-portable.zip"
+          $portableName = "cc-tv-windows-tauri2-$version-portable-release.zip"
           $portableZip = Join-Path $portableOutput $portableName
           Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableZip -CompressionLevel Optimal
           Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -110,3 +110,16 @@ jobs:
           $assets = Get-ChildItem 'src-tauri/target/release/bundle/release-assets/*' | ForEach-Object { $_.FullName }
           if (-not $assets) { throw '没有可上传的 Release 资产' }
           gh release upload $tag @assets --repo '${{ github.repository }}' --clobber
+          $marker = '本次追加更新（1.0.26）'
+          $body = gh release view $tag --repo '${{ github.repository }}' --json body --jq .body
+          if ($body -notmatch [regex]::Escape($marker)) {
+            $append = @(
+              '- 更新下载增加多条 GitHub 加速链路，失败后自动回退原始地址，并校验安装包完整性。',
+              '- 搜索、播放线路、片源及首页片单来源改用固定顺序编号；隐藏源设置可通过输入 5858 在本次运行中显示。',
+              '- 非全屏播放器仅在画面区域响应控制条；长按左右键时显示进度条，松开 0.3 秒后隐藏。',
+              '- 固定紫色强调色并使用最新桌面图标。',
+              '- cc-tv-windows-tauri2-1.0.26-setup-release.exe 为安装版；cc-tv-windows-tauri2-1.0.26-portable-release.zip 为免安装绿色版，压缩包不包含独立 ICO 文件。'
+            )
+            $notes = $body + "`n`n" + $marker + "`n" + ($append -join "`n")
+            gh release edit $tag --repo '${{ github.repository }}' --notes $notes
+          }

@@ -16,7 +16,10 @@ const GITHUB_API_PROXIES = [
 const GITHUB_RELEASE_PROXIES = [
   'https://gh.llkk.cc/https://github.com',
   'https://gh-proxy.com/https://github.com',
-  'https://ghfast.top/https://github.com'
+  'https://ghfast.top/https://github.com',
+  'https://proxy.gitwarp.top/https://github.com',
+  'https://ghproxy.net/https://github.com',
+  'https://github.moeyy.xyz/https://github.com'
 ]
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 let rankedReleaseProxies: string[] = []
@@ -78,7 +81,6 @@ async function fastestReleaseProxies(assetPath: string): Promise<string[]> {
   const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
     .sort((left, right) => left.elapsed - right.elapsed)
   const failed = probes.flatMap((result, index) => result.status === 'rejected' ? [GITHUB_RELEASE_PROXIES[index]] : [])
-  if (!successful.length) throw new Error('所有 GitHub 加速下载地址测速失败')
   rankedReleaseProxies = [...successful.map((item) => item.prefix), ...failed]
   proxyRankingExpiresAt = Date.now() + 5 * 60_000
   return rankedReleaseProxies
@@ -129,8 +131,10 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
   const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
   const latestVersion = tag.replace(/^v/, '')
   if (!versionParts(latestVersion)) throw new Error('GitHub Release 版本号格式无效')
-  const assetName = `cc-tv-windows-tauri2-${latestVersion}-setup.exe`
-  const asset = release.assets?.find((item) => item.name === assetName)
+  const releaseInstaller = `cc-tv-windows-tauri2-${latestVersion}-setup-release.exe`
+  const standardInstaller = `cc-tv-windows-tauri2-${latestVersion}-setup.exe`
+  const asset = release.assets?.find((item) => item.name === releaseInstaller)
+    ?? release.assets?.find((item) => item.name === standardInstaller)
   if (!asset || typeof asset.size !== 'number' || asset.size < 1_000_000 || asset.size > MAX_INSTALLER_BYTES) {
     throw new Error('最新 Release 中没有有效的 Windows 安装包')
   }
@@ -141,7 +145,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.25',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
-    assetName,
+    assetName: asset.name as string,
     assetSize: asset.size,
     digest: asset.digest.slice('sha256:'.length).toLowerCase()
   }
@@ -167,9 +171,10 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
   const mirrors = await fastestReleaseProxies(assetPath)
   let lastError: Error | undefined
-  for (const prefix of mirrors) {
+  const urls = [...mirrors.map((prefix) => `${prefix}/${assetPath}`), `https://github.com/${assetPath}`]
+  for (const url of urls) {
     try {
-      const response = await fetchReleaseAsset([`${prefix}/${assetPath}`], release.assetSize)
+      const response = await fetchReleaseAsset([url], release.assetSize)
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
       const lengthHeader = response.headers.get('content-length')
       const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
@@ -210,5 +215,5 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
       lastError = error instanceof Error ? error : new Error(String(error))
     }
   }
-  throw new Error(`所有 GitHub 加速下载链路均失败：${lastError?.message ?? '未知错误'}`)
+  throw new Error(`加速下载地址和 GitHub 原始地址均失败：${lastError?.message ?? '未知错误'}`)
 }

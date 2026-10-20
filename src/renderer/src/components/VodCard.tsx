@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import type { Vod } from '@shared/types'
 import { Poster } from '@/components/Poster'
+import { androidSearchPriority, circledOrdinal, sourceOrdinal } from '@shared/searchSourcePolicy'
 
 /**
  * 一张影片卡。搜索结果和首页内容位共用。
@@ -17,7 +18,7 @@ export function VodCard({
   const returnTo = `${location.pathname}${location.search}`
   const sources = [vod, ...(vod.alternatives ?? [])].filter(
     (source, index, all) => all.findIndex((item) => item.siteKey === source.siteKey) === index
-  )
+  ).sort((left, right) => androidSearchPriority(left.siteKey, left.siteName) - androidSearchPriority(right.siteKey, right.siteName))
   return (
     <div className="vod-card">
       <Link
@@ -46,11 +47,11 @@ export function VodCard({
           <Link
             key={`${source.siteKey}-${source.vod_id}`}
             className="tag tag-outline vod-card-source"
-            title={`查看「${source.siteName}」来源`}
+            title={sourceOrdinal(source.siteKey, source.siteName) ? `查看片源 ${circledOrdinal(sourceOrdinal(source.siteKey, source.siteName)!)}` : '查看片源'}
             to={`/play/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}/0/0`}
             state={{ playbackReturnTo: returnTo, autoPlay: true }}
           >
-            {source.siteName}
+            {sourceOrdinal(source.siteKey, source.siteName) ? circledOrdinal(sourceOrdinal(source.siteKey, source.siteName)!) : ''}
           </Link>
         ))}
       </div>

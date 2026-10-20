@@ -6,7 +6,7 @@ import { Icon } from '@/components/icons'
 import { mergeResults, useApp } from '@/store/useApp'
 import { collectAdultTitleKeys, matchesAdultContent, normalizeName, posterMatchKeys } from '@/utils/normalize'
 import { clearSearchHistory, getSearchHistory, rememberSearch, subscribeSearchHistory } from '@/utils/searchHistory'
-import { androidSearchPriority } from '@shared/searchSourcePolicy'
+import { androidSearchPriority, circledOrdinal, sourceOrdinal } from '@shared/searchSourcePolicy'
 import type { CategoryBucket } from '@shared/types'
 import { translate } from '@/i18n'
 
@@ -326,7 +326,7 @@ export function Search(): JSX.Element {
               title={r.ok ? `${translate('用时 ')}${r.ms}ms` : r.message}
             >
               <span className={`dot ${r.ok && r.list.length ? 'ok' : r.ok ? '' : 'bad'}`} />
-              {r.siteName}
+              {sourceOrdinal(r.siteKey, r.siteName) ? circledOrdinal(sourceOrdinal(r.siteKey, r.siteName)!) : ''}
               <span className="chip-count">{r.list.length}</span>
             </button>
           ))}
@@ -386,7 +386,7 @@ export function Search(): JSX.Element {
             {failedSites.map((r) => (
               <div className="list-row" key={r.siteKey}>
                 <div className="list-row-main">
-                  <div className="list-row-title">{r.siteName}</div>
+                  <div className="list-row-title">{sourceOrdinal(r.siteKey, r.siteName) ? circledOrdinal(sourceOrdinal(r.siteKey, r.siteName)!) : ''}</div>
                   <div className="list-row-sub">{r.message}</div>
                 </div>
               </div>

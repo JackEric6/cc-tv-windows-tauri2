@@ -8,6 +8,7 @@ import { relativeTime } from '@/utils/format'
 import { SITE_TYPE_LABEL } from '@shared/siteLabels'
 import { translate } from '@/i18n'
 import { submitFeedback as sendFeedback } from '@/services/feedback'
+import { circledOrdinal, sourceOrdinal } from '@shared/searchSourcePolicy'
 
 interface SettingsProps {
   onUpdateFound: (update: { version: string; currentVersion: string; notes: string }) => void
@@ -39,7 +40,14 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [feedbackSending, setFeedbackSending] = useState(false)
   const [settingsTab, setSettingsTab] = useState<'general' | 'sources' | 'about'>('general')
+  const [settingsUnlocked, setSettingsUnlocked] = useState(() => sessionStorage.getItem('cc-tv.settings-unlocked') === 'true')
   const [settingsDraft, setSettingsDraft] = useState<AppSettings | null>(null)
+
+  useEffect(() => {
+    const unlock = (): void => setSettingsUnlocked(true)
+    window.addEventListener('cc-tv:settings-unlocked', unlock)
+    return () => window.removeEventListener('cc-tv:settings-unlocked', unlock)
+  }, [])
 
   useEffect(() => {
     if (settings && !settingsDraft) setSettingsDraft(settings)
@@ -77,6 +85,14 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   async function submitFeedback(): Promise<void> {
     const content = feedback.trim()
     if (!content || feedbackSending) return
+    if (content === '5858') {
+      sessionStorage.setItem('cc-tv.settings-unlocked', 'true')
+      setSettingsUnlocked(true)
+      window.dispatchEvent(new Event('cc-tv:settings-unlocked'))
+      setFeedback('')
+      setFeedbackMessage(translate('隐藏功能已在本次运行中显示'))
+      return
+    }
     if (content === '4848') {
       setSessionFilterAdult(false)
       setFeedback('')
@@ -183,7 +199,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
 
       <div className="settings-tabs" role="tablist" aria-label={translate("设置分类")}>
         <button type="button" role="tab" aria-selected={settingsTab === 'general'} className={settingsTab === 'general' ? 'active' : ''} onClick={() => setSettingsTab('general')}>{translate("\n          常规与播放\n        ")}</button>
-        <button type="button" role="tab" aria-selected={settingsTab === 'sources'} className={settingsTab === 'sources' ? 'active' : ''} onClick={() => setSettingsTab('sources')}>{translate("\n          影视源与解析\n        ")}</button>
+        {settingsUnlocked ? <button type="button" role="tab" aria-selected={settingsTab === 'sources'} className={settingsTab === 'sources' ? 'active' : ''} onClick={() => setSettingsTab('sources')}>{translate("\n          影视源与解析\n        ")}</button> : null}
         <button type="button" role="tab" aria-selected={settingsTab === 'about'} className={settingsTab === 'about' ? 'active' : ''} onClick={() => setSettingsTab('about')}>{translate("\n          反馈与关于\n        ")}</button>
       </div>
 
@@ -863,12 +879,12 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
               value={settings.homeSourceKey}
               onChange={(event) => void saveHomeSource(event.target.value as AppSettings['homeSourceKey'])}
             >
-              <option value="guazi">瓜子</option>
-              <option value="xgzy">西瓜</option>
-              <option value="dyttzy">天堂</option>
-              <option value="ffzy">非凡</option>
-              <option value="lzi">量子</option>
-              <option value="bfzy">暴风</option>
+              <option value="guazi">{circledOrdinal(sourceOrdinal('guazi')!)}</option>
+              <option value="xgzy">{circledOrdinal(sourceOrdinal('xgzy')!)}</option>
+              <option value="dyttzy">{circledOrdinal(sourceOrdinal('dyttzy')!)}</option>
+              <option value="ffzy">{circledOrdinal(sourceOrdinal('ffzy')!)}</option>
+              <option value="lzi">{circledOrdinal(sourceOrdinal('lzi')!)}</option>
+              <option value="bfzy">{circledOrdinal(sourceOrdinal('bfzy')!)}</option>
             </select>
             <div className="field-hint">{translate("选择后立即刷新首页片单")}</div>
           </div>
@@ -968,10 +984,10 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
                 className="input"
                 type="color"
                 style={{ width: 48, padding: 2 }}
-                value={draft.accent}
-                onChange={(e) => setDraft({ ...draft, accent: e.target.value })}
+                value="#6A3DE8"
+                disabled
               />
-              <span className="mono fs-12">{draft.accent}</span>
+              <span className="mono fs-12">#6A3DE8</span>
             </div>
           </div>
           <div className="settings-subhead">{translate("播放体验")}</div>

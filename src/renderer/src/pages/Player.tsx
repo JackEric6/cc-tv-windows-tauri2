@@ -15,6 +15,7 @@ import { isDirectMedia, isHls, pickPlayableLine } from '@/utils/media'
 import { formatClock } from '@/utils/format'
 import { normalizeName } from '@/utils/normalize'
 import { translate } from '@/i18n'
+import { androidSearchPriority, circledOrdinal, sourceOrdinal } from '@shared/searchSourcePolicy'
 
 const DANMAKU_INITIAL_BATCH_SIZE = 500
 const DANMAKU_APPEND_BATCH_SIZE = 1000
@@ -167,6 +168,7 @@ export function Player({
   const seekOverlayTimerRef = useRef<number | undefined>(undefined)
   const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
+  const heldSeekKeys = useRef(new Set<string>())
   const playerRef = useRef<VideoPlayer | null>(null)
   const visibleRef = useRef(visible)
   const autoplayRef = useRef(visible && autoPlay)
@@ -315,12 +317,12 @@ export function Player({
     inlineControlsTimer.current = undefined
   }, [])
 
-  const scheduleInlineControlsHide = useCallback((): void => {
+  const scheduleInlineControlsHide = useCallback((delay = INLINE_CONTROL_IDLE_MS): void => {
     clearInlineControlsTimer()
     inlineControlsTimer.current = window.setTimeout(() => {
       inlineControlsTimer.current = undefined
       setPlayerControlsVisible(false)
-    }, INLINE_CONTROL_IDLE_MS)
+    }, delay)
   }, [clearInlineControlsTimer])
 
   const scheduleFullscreenHide = useCallback((delay: number): void => {
@@ -1113,6 +1115,11 @@ export function Player({
         event.stopImmediatePropagation()
         if (!activePlayer || activePlayer.isDisposed()) return
         if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+          if (event.repeat) {
+            heldSeekKeys.current.add(event.key)
+            setPlayerControlsVisible(true)
+            scheduleInlineControlsHide(300)
+          }
           const direction = event.key === 'ArrowLeft' ? -1 : 1
           const duration = Number(activePlayer.duration())
           const current = Number(activePlayer.currentTime()) || 0
@@ -1130,6 +1137,14 @@ export function Player({
         }
       }
     }
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (!heldSeekKeys.current.delete(event.key)) return
+      scheduleInlineControlsHide(300)
+    }
+    const onBlur = (): void => {
+      heldSeekKeys.current.clear()
+      scheduleInlineControlsHide(300)
+    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1144,12 +1159,16 @@ export function Player({
       flashPlayerAction(`音量 ${Math.round(next * 100)}%`)
     }
     window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
       stage?.removeEventListener('wheel', onWheel)
     }
-  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction])
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
@@ -1434,6 +1453,9 @@ export function Player({
     ? Math.min(100, Math.max(0, playbackPosition / playbackDuration * 100))
     : 0
   const fullscreenTime = `${String(systemClock.getHours()).padStart(2, '0')}:${String(systemClock.getMinutes()).padStart(2, '0')}`
+  const orderedSources = [...sources].sort((a, b) =>
+    androidSearchPriority(a.siteKey, a.siteName) - androidSearchPriority(b.siteKey, b.siteName)
+  )
 
   const updateProgressPreview = (event: ReactPointerEvent<HTMLInputElement>): void => {
     updateProgressPreviewAt(event.clientX, event.currentTarget.getBoundingClientRect())
@@ -1477,7 +1499,7 @@ export function Player({
           {detail.vod_name}
         </span>
         <span className="text-3 fs-12">
-          {line?.name} · {episode.name}
+          {circledOrdinal(lineIndex + 1)} · {episode.name}
         </span>
         {!isFullscreen ? (
           <button
@@ -1499,29 +1521,27 @@ export function Player({
       </div>
 
       <div className="player-layout">
-        <div className={`player-main${playerControlsVisible || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker ? '' : ' controls-hidden'}`}
-          onPointerEnter={(event) => {
-            if (event.pointerType === 'mouse') pointerInsidePlayer.current = true
-            updateControlsFromPointer(event)
-          }}
-          onPointerLeave={(event) => {
-            if (event.pointerType === 'mouse') {
+        <div className={`player-main${playerControlsVisible || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker ? '' : ' controls-hidden'}`}>
+          <div
+            ref={stageRef}
+            className={`player-stage${isFullscreen ? ' is-fullscreen' : ''}`}
+            onPointerEnter={(event) => {
+              pointerInsidePlayer.current = event.pointerType !== 'touch'
+              updateControlsFromPointer(event)
+            }}
+            onPointerLeave={(event) => {
+              if (event.pointerType === 'touch') return
               pointerInsidePlayer.current = false
               clearFullscreenTimer()
               clearInlineControlsTimer()
               setPlayerControlsVisible(false)
-            }
-          }}
-          onPointerMove={updateControlsFromPointer}
-          onPointerUp={(event) => {
-            if (event.pointerType !== 'mouse') {
-              scheduleFullscreenHide(activePlayer?.paused() ? FULLSCREEN_PAUSE_PEEK_MS : 3200)
-            }
-          }}
-        >
-          <div
-            ref={stageRef}
-            className={`player-stage${isFullscreen ? ' is-fullscreen' : ''}`}
+            }}
+            onPointerMove={updateControlsFromPointer}
+            onPointerUp={(event) => {
+              if (event.pointerType !== 'mouse') {
+                scheduleFullscreenHide(activePlayer?.paused() ? FULLSCREEN_PAUSE_PEEK_MS : 3200)
+              }
+            }}
             onPointerDown={startHeldPlaybackRate}
             onClickCapture={(event) => {
               if (!suppressHoldClickRef.current) return
@@ -1892,7 +1912,7 @@ export function Player({
             <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-side" />
             <div>
               <div className="player-side-title">{detail.vod_name}</div>
-              <div className="text-3 fs-12">{line?.name}</div>
+              <div className="text-3 fs-12">{circledOrdinal(lineIndex + 1)}</div>
               <div className="text-3 fs-12">{translate("\n                第 ")}{epIndex + 1} / {episodes.length}{translate(" 集\n              ")}</div>
             </div>
           </div>
@@ -1906,10 +1926,10 @@ export function Player({
                     key={`${item.name}-${index}`}
                     type="button"
                     className={`chip chip-source${index === lineIndex ? ' active' : ''}`}
-                    title={`${item.name} · ${item.episodes.length} 集`}
+                    title={`${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
                     onClick={() => navigateToLine(index)}
                   >
-                    {item.name}
+                    {circledOrdinal(index + 1)}
                   </button>
                 ))}
               </div>
@@ -1925,18 +1945,20 @@ export function Player({
             </div>
             {sources.length > 1 ? (
               <div className="source-chips">
-                {sources.map((v) => {
+                {orderedSources.map((v) => {
+                  const ordinal = sourceOrdinal(v.siteKey, v.siteName)
+                  const sourceLabel = ordinal ? circledOrdinal(ordinal) : ''
                   const active = v.siteKey === siteKey && v.vod_id === vodId
                   const title = v.vod_name && v.vod_name !== detail.vod_name
-                    ? `${v.siteName}（该源片名：${v.vod_name}）`
-                    : v.siteName
+                    ? `该片源片名：${v.vod_name}`
+                    : sourceLabel
                   return active ? (
                     <span
                       key={`${v.siteKey}/${v.vod_id}`}
                       className="chip chip-source active"
                       title={`${title} · 正在看`}
                     >
-                      {v.siteName}
+                      {sourceLabel}
                     </span>
                   ) : (
                     <Link
@@ -1946,7 +1968,7 @@ export function Player({
                       to={`/play/${encodeURIComponent(v.siteKey)}/${encodeURIComponent(v.vod_id)}/0/0`}
                       state={playerRouteState}
                     >
-                      {v.siteName}
+                      {sourceLabel}
                     </Link>
                   )
                 })}

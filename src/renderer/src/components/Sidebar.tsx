@@ -1,4 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { useApp } from '@/store/useApp'
 import { Icon, type IconName } from './icons'
 import { translate } from '@/i18n'
@@ -16,6 +17,13 @@ export function Sidebar(): JSX.Element {
   const history = useApp((s) => s.history)
   const updateSettings = useApp((s) => s.updateSettings)
   const location = useLocation()
+  const [settingsUnlocked, setSettingsUnlocked] = useState(() => sessionStorage.getItem('cc-tv.settings-unlocked') === 'true')
+
+  useEffect(() => {
+    const unlock = (): void => setSettingsUnlocked(true)
+    window.addEventListener('cc-tv:settings-unlocked', unlock)
+    return () => window.removeEventListener('cc-tv:settings-unlocked', unlock)
+  }, [])
 
   const requestedLibraryTab = new URLSearchParams(location.search).get('tab')
   const activeLibraryTab = requestedLibraryTab === 'history' || (!requestedLibraryTab && !favorites.length && history.length)
@@ -29,9 +37,9 @@ export function Sidebar(): JSX.Element {
     { to: '/library?tab=history', label: '历史', icon: 'clock', libraryTab: 'history' },
     { to: '/library?tab=favorites', label: '收藏', icon: 'star', libraryTab: 'favorites' },
     { to: '/downloads', label: '下载', icon: 'download' },
-    { to: '/sites', label: '接口', icon: 'layers' },
     { to: '/settings', label: '设置', icon: 'settings' }
   ]
+  if (settingsUnlocked) nav.splice(nav.length - 1, 0, { to: '/sites', label: '接口', icon: 'layers' })
 
   return (
     <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
