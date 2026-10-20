@@ -24,7 +24,7 @@ export function Search(): JSX.Element {
   const browseCategory = useApp((s) => s.browseCategory)
   const browseMore = useApp((s) => s.browseMore)
   const clearBrowse = useApp((s) => s.clearBrowse)
-  const filterCommentary = useApp((s) => s.settings?.filterCommentary ?? true)
+  const filterCommentary = useApp((s) => s.settings?.filterCommentary ?? false)
   const filterAdult = useApp((s) => s.sessionFilterAdult ?? s.settings?.filterAdult ?? true)
   const updateSettings = useApp((s) => s.updateSettings)
 

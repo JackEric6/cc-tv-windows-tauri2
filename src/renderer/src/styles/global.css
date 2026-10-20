@@ -238,8 +238,8 @@ textarea {
 }
 
 .sidebar:not(.collapsed) .nav-item {
-  gap: 2px;
-  padding: 0 4px;
+  gap: 7px;
+  padding: 0 8px;
 }
 
 .nav-item:hover {
@@ -262,7 +262,15 @@ textarea {
 }
 
 .sidebar:not(.collapsed) .nav-item .nav-icon {
-  width: 16px;
+  width: 20px;
+}
+
+.sidebar:not(.collapsed) .nav-label {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .nav-item .nav-count {
@@ -315,6 +323,17 @@ textarea {
   padding: var(--gap-s);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.settings-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
 }
 
 /* ==========================================================================

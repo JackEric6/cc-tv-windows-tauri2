@@ -158,7 +158,7 @@ export function Player({
   const runSearch = useApp((s) => s.runSearch)
   const recordHistory = useApp((s) => s.recordHistory)
   const toggleFavorite = useApp((s) => s.toggleFavorite)
-  const filterCommentary = settings?.filterCommentary ?? true
+  const filterCommentary = settings?.filterCommentary ?? false
 
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -1242,7 +1242,7 @@ export function Player({
     previewHideTimerRef.current = window.setTimeout(() => {
       previewHideTimerRef.current = undefined
       clearProgressPreview()
-    }, 500)
+    }, 300)
   }, [clearProgressPreview])
 
   useEffect(() => {

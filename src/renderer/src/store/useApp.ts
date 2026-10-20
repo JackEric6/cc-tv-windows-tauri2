@@ -267,7 +267,7 @@ export function mergeResults(
     previousOrder?: Map<string, number>
   } = {}
 ): { merged: MergedVod[]; hidden: number } {
-  const { keyword = '', filterCommentary = true, filterAdult = true } = options
+  const { keyword = '', filterCommentary = false, filterAdult = true } = options
   const groups = new Map<string, Vod[]>()
   let hidden = 0
 
@@ -351,7 +351,7 @@ export function findSourceGroup(
   results: SiteSearchResult[],
   current: { siteKey: string; vodId: string; vodName: string },
   siteNames: Map<string, string>,
-  filterCommentary = true
+  filterCommentary = false
 ): Vod[] {
   const target = normalizeName(current.vodName)
   const picked = new Map<string, Vod>()
@@ -662,13 +662,20 @@ export const useApp = create<AppState>((set, get) => ({
       set((s) =>
         s.search.wd === keyword
           ? {
-              search: {
-                ...s.search,
-                running: false,
-                total: res.total,
-                done: res.results.length,
-                results: sortSearchResults(shareSearchPosters(res.results), get().sites)
-              }
+              // A cancelled IPC run may resolve with no snapshot after progress events already arrived.
+              // Keep those streamed results instead of replacing them with an empty array.
+              ...(() => {
+                const results = res.results.length || res.total === 0 ? res.results : s.search.results
+                return {
+                  search: {
+                    ...s.search,
+                    running: false,
+                    total: Math.max(res.total, s.search.total),
+                    done: Math.max(res.results.length, s.search.done),
+                    results: sortSearchResults(shareSearchPosters(results), get().sites)
+                  }
+                }
+              })()
             }
           : {}
       )

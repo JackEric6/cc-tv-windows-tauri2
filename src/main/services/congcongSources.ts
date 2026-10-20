@@ -31,13 +31,7 @@ const GUAZI_TOKEN_KEY = 'congcong-guazi-token'
 const GUAZI_DEVICE_KEY = 'congcong-guazi-device'
 const GUAZI_SIGNUP_DEVICE_KEY = 'congcong-guazi-signup-device'
 const JIANPIAN_IMAGE_ORIGIN = 'https://img.ypfbj.com'
-const JIANPIAN_PRIMARY_HOST = 'cqjdn.com'
-const JIANPIAN_DISCOVERY_URL = 'https://ssopj-1462720388.cos.accelerate.myqcloud.com/config.txt'
-const JIANPIAN_DEFAULT_HOSTS = [
-  'cqjdn.com', 'bdgnbrws.com', 'fvevfbr.com', 'swgsdfew.com', 'hodpj.cc',
-  'fan123.hzhnl.com', 'jianpian.com', 'jianpian25.com'
-]
-const JIANPIAN_DISCOVERY_TTL = 10 * 60 * 1000
+const JIANPIAN_ORIGIN = 'https://jianpian99.com'
 const JIANPIAN_SEARCH_CACHE_TTL = 30 * 1000
 const JIANPIAN_SEARCH_CACHE_LIMIT = 24
 const GUAZI_CONTENT_FIELDS = [
@@ -53,10 +47,6 @@ const guaziMetadata = new Map<string, Record<string, unknown>>()
 const jianpianSearchCache = new Map<string, { createdAt: number; value: Record<string, any> }>()
 let cachedGuaziToken = ''
 let tokenLoad: Promise<string> | undefined
-let lastSuccessfulJianpianOrigin = ''
-let discoveredJianpianOrigins: string[] = []
-let jianpianDiscoveryCheckedAt = 0
-let jianpianDiscovery: Promise<string[]> | undefined
 
 function asObject(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -186,7 +176,7 @@ function extractJianpianImage(value: unknown, depth = 0): string {
 
 function jianpianPoster(raw: Record<string, any>): string {
   for (const field of [
-    'poster_url', 'poster_path', 'cover_url', 'cover_pic', 'cover_img', 'video_cover', 'poster', 'cover',
+    'voidpic', 'poster_url', 'poster_path', 'cover_url', 'cover_pic', 'cover_img', 'video_cover', 'poster', 'cover',
     'pic_url', 'small_pic', 'pic', 'image', 'image_url', 'image_path', 'img_url', 'thumb_url',
     'thumb', 'thumbnail', 'tvimg', 'img', 'vod_img', 'vod_pic'
   ]) {
@@ -198,18 +188,18 @@ function jianpianPoster(raw: Record<string, any>): string {
 
 function makeVod(raw: Record<string, any>, site: Site, kind: 'guazi' | 'jianpian'): Vod {
   if (kind === 'jianpian') {
-    const id = firstText(raw, 'id', 'work_id', 'video_id')
+    const id = firstText(raw, 'vodid', 'id', 'work_id', 'video_id')
     return {
       vod_id: id,
-      vod_name: firstText(raw, 'title', 'name', 'original_name') || id,
+      vod_name: firstText(raw, 'vodname', 'title', 'name', 'original_name') || id,
       vod_pic: jianpianPoster(raw),
-      vod_remarks: firstText(raw, 'mask', 'remarks', 'badge', 'episodes_count'),
-      vod_year: firstText(raw, 'year', 'release_year'),
-      vod_area: firstText(raw, 'areas', 'area', 'region'),
-      vod_actor: firstText(raw, 'actors', 'actor'),
-      vod_director: firstText(raw, 'directors', 'director'),
-      type_name: firstText(raw, 'types', 'category', 'kind'),
-      vod_score: firstText(raw, 'score', 'rating'),
+      vod_remarks: firstText(raw, 'vodcontinu', 'mask', 'remarks', 'badge', 'episodes_count'),
+      vod_year: firstText(raw, 'vodyear', 'year', 'release_year'),
+      vod_area: firstText(raw, 'vodarea', 'areas', 'area', 'region'),
+      vod_actor: firstText(raw, 'vodactor', 'actors', 'actor'),
+      vod_director: firstText(raw, 'voddirector', 'directors', 'director'),
+      type_name: firstText(raw, 'vodtype', 'types', 'category', 'kind'),
+      vod_score: firstText(raw, 'vodgold', 'score', 'rating'),
       siteKey: site.key,
       siteName: site.name,
       sourceId: site.sourceId
@@ -243,35 +233,29 @@ function mapJianpianEpisode(value: unknown, index: number): Episode | null {
   const episode = unwrap(value, 'episode', 'item')
   const url = firstText(episode, 'url', 'play_url', 'playback_url', 'media_url')
   if (!url) return null
-  let name = firstText(episode, 'source_name', 'weight', 'name', 'title', 'sort')
-  if (!name) name = `第${index + 1}集`
-  else if (/^\d+$/.test(name)) name = `第${name}集`
+  const name = firstText(episode, 'name', 'title', 'label', 'source_name') || `第${index + 1}集`
   return { name, url, index }
 }
 
-function mapJianpianLines(raw: Record<string, any>): Line[] {
-  const grouped = new Map<string, Episode[]>()
-  for (const field of ['source_list_source', 'vip_source_list_source']) {
-    for (const lineValue of firstArray(raw, field)) {
-      const line = unwrap(lineValue, 'line', 'provider')
-      const name = firstText(line, 'name', 'source_name', 'title') || '荐片线路'
-      const episodes = firstArray(line, 'source_list', 'episodes', 'list')
-        .map((entry, index) => mapJianpianEpisode(entry, index))
-        .filter((entry): entry is Episode => Boolean(entry))
-      if (!episodes.length) continue
-      const current = grouped.get(name) ?? []
-      const seen = new Set(current.map((entry) => entry.url))
-      for (const episode of episodes) if (!seen.has(episode.url) && current.length < 1200) current.push(episode)
-      if (!grouped.has(name) && grouped.size < 4) grouped.set(name, current)
-    }
-  }
-  if (!grouped.size) {
-    const episodes = firstArray(raw, 'ftp_list')
-      .map((entry, index) => mapJianpianEpisode(entry, index))
-      .filter((entry): entry is Episode => Boolean(entry))
-    if (episodes.length) grouped.set('FTP线路', episodes)
-  }
-  return [...grouped.entries()].map(([name, episodes]) => ({ name, episodes }))
+function parseJianpianPlayUrl(value: unknown, lineName: string): Line | null {
+  const text = typeof value === 'string' ? value : ''
+  const episodes = text.split(/[\n\r#]+/).flatMap((entry, index) => {
+    const separator = entry.indexOf('$')
+    if (separator < 1) return []
+    const name = entry.slice(0, separator).trim()
+    const url = entry.slice(separator + 1).trim()
+    return /^https?:\/\//i.test(url) ? [{ name: name || `第${index + 1}集`, url, index }] : []
+  })
+  return episodes.length ? { name: lineName, episodes } : null
+}
+
+function mapJianpianNormalLines(raw: Record<string, any>): Line[] {
+  const direct = parseJianpianPlayUrl(firstText(raw, 'vodurl', 'play_url', 'normal_play_url'), '普通线路')
+  if (direct) return [direct]
+  const episodes = firstArray(raw, 'source_list_source', 'source_list', 'episodes')
+    .map((entry, index) => mapJianpianEpisode(entry, index))
+    .filter((entry): entry is Episode => Boolean(entry))
+  return episodes.length ? [{ name: '普通线路', episodes }] : []
 }
 
 function toDetail(vod: Vod, content: string, lines: Line[]): VodDetail {
@@ -307,62 +291,12 @@ async function fetchJson(url: string, options: RequestInit = {}): Promise<Record
   }
 }
 
-function normalizeJianpianOrigin(value: string): string {
-  let text = value.trim().replace(/^['"]|['"]$/g, '')
-  if (!text) return ''
-  if (!/^https?:\/\//i.test(text)) text = `https://${text}`
-  try {
-    const url = new URL(text)
-    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password ||
-      (url.pathname !== '/' && url.pathname !== '') || url.search || url.hash) return ''
-    return url.origin
-  } catch {
-    return ''
-  }
-}
-
-async function discoverJianpianOrigins(): Promise<string[]> {
-  const now = Date.now()
-  if (now - jianpianDiscoveryCheckedAt < JIANPIAN_DISCOVERY_TTL) return discoveredJianpianOrigins
-  if (jianpianDiscovery) return jianpianDiscovery
-
-  jianpianDiscoveryCheckedAt = now
-  jianpianDiscovery = (async () => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 2500)
-    try {
-      const response = await networkFetch(JIANPIAN_DISCOVERY_URL, {
-        headers: { Accept: 'text/plain, */*', 'User-Agent': 'Mozilla/5.0 packageName:com.jp3.xg3' },
-        signal: controller.signal
-      })
-      if (!response.ok) return discoveredJianpianOrigins
-      const body = await response.text()
-      discoveredJianpianOrigins = [...new Set(body.split(/[,\s]+/).map(normalizeJianpianOrigin).filter(Boolean))]
-      return discoveredJianpianOrigins
-    } catch {
-      return discoveredJianpianOrigins
-    } finally {
-      clearTimeout(timer)
-      jianpianDiscovery = undefined
-    }
-  })()
-  return jianpianDiscovery
-}
-
-async function jianpianCandidateOrigins(): Promise<string[]> {
-  return [...new Set([
-    lastSuccessfulJianpianOrigin,
-    ...JIANPIAN_DEFAULT_HOSTS.map((host) => normalizeJianpianOrigin(host))
-  ].filter(Boolean))]
-}
-
 async function fetchJianpianOrigin(
-  origin: string,
   path: string,
   query: URLSearchParams,
   timeout: number,
-  failures: string[],
-  parentSignal?: AbortSignal
+  parentSignal?: AbortSignal,
+  headers: Record<string, string> = {}
 ): Promise<Record<string, any> | null> {
   const controller = new AbortController()
   const abortFromParent = (): void => controller.abort()
@@ -370,13 +304,14 @@ async function fetchJianpianOrigin(
   else parentSignal?.addEventListener('abort', abortFromParent, { once: true })
   const timer = setTimeout(() => controller.abort(), timeout)
   try {
-    const url = new URL(path, `${origin}/`)
+    const url = new URL(path, `${JIANPIAN_ORIGIN}/`)
     query.forEach((value, key) => url.searchParams.set(key, value))
     const response = await networkFetch(url, {
       headers: {
-        Accept: 'application/json',
-        Referer: `${origin}/`,
-        'User-Agent': 'Mozilla/5.0 packageName:com.jp3.xg3'
+        Accept: 'application/json,text/plain,*/*',
+        Referer: `${JIANPIAN_ORIGIN}/`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36',
+        ...headers
       },
       signal: controller.signal
     })
@@ -386,45 +321,14 @@ async function fetchJianpianOrigin(
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('荐片接口返回了无效 JSON')
     }
-    lastSuccessfulJianpianOrigin = origin
     return parsed as Record<string, any>
   } catch (error) {
     const err = error as Error
-    const message = err.name === 'AbortError' ? `请求超时（${Math.round(timeout / 1000)}s）` : err.message
-    failures.push(`${new URL(origin).hostname} ${message}`)
-    if (origin === lastSuccessfulJianpianOrigin) lastSuccessfulJianpianOrigin = ''
-    return null
+    if (err.name === 'AbortError') throw new Error(`荐片请求超时（${Math.round(timeout / 1000)}s）`)
+    throw err
   } finally {
     clearTimeout(timer)
     parentSignal?.removeEventListener('abort', abortFromParent)
-  }
-}
-
-async function raceJianpianOrigins(
-  origins: string[],
-  path: string,
-  query: URLSearchParams,
-  timeout: number,
-  failures: string[],
-  signal: AbortSignal,
-  attempted: Set<string>
-): Promise<Record<string, any>> {
-  const candidates = [...new Set(origins)].filter((origin) => {
-    if (attempted.has(origin)) return false
-    attempted.add(origin)
-    return true
-  })
-  if (!candidates.length) throw new Error('没有新的荐片备用域名')
-  const raceController = new AbortController()
-  const raceSignal = AbortSignal.any([signal, raceController.signal])
-  try {
-    return await Promise.any(candidates.map(async (origin) => {
-      const result = await fetchJianpianOrigin(origin, path, query, timeout, failures, raceSignal)
-      if (!result) throw new Error(`荐片域名不可用：${new URL(origin).hostname}`)
-      return result
-    }))
-  } finally {
-    raceController.abort()
   }
 }
 
@@ -432,12 +336,11 @@ async function fetchJianpianJson(
   path: string,
   query: URLSearchParams,
   timeoutOverride?: number,
-  parentSignal?: AbortSignal
+  parentSignal?: AbortSignal,
+  headers: Record<string, string> = {}
 ): Promise<Record<string, any>> {
-  const isSearch = path === '/api/v2/search/videoV2'
-  const primaryTimeout = Math.min(timeoutOverride ?? (isSearch ? 6000 : 8000), isSearch ? 6000 : 8000)
-  const fallbackTimeout = Math.min(timeoutOverride ?? (isSearch ? 4000 : 6000), isSearch ? 4000 : 6000)
-  const cacheKey = path === '/api/v2/search/videoV2' ? `${path}?${query.toString()}` : ''
+  const timeout = Math.max(1000, Math.min(timeoutOverride ?? 8000, 15000))
+  const cacheKey = path === '/api/v1/search' ? `${path}?${query.toString()}` : ''
   if (cacheKey) {
     const cached = jianpianSearchCache.get(cacheKey)
     if (cached && Date.now() - cached.createdAt <= JIANPIAN_SEARCH_CACHE_TTL) {
@@ -448,30 +351,8 @@ async function fetchJianpianJson(
     if (cached) jianpianSearchCache.delete(cacheKey)
   }
 
-  const failures: string[] = []
-  const attempted = new Set<string>()
-  const primary = normalizeJianpianOrigin(lastSuccessfulJianpianOrigin || JIANPIAN_PRIMARY_HOST)
-  const discovery = discoverJianpianOrigins()
-  const knownOrigins = (await jianpianCandidateOrigins()).filter((origin) => origin !== primary)
-  let parsed: Record<string, any> | null = null
-  const raceController = new AbortController()
-  const signal = parentSignal
-    ? AbortSignal.any([parentSignal, raceController.signal])
-    : raceController.signal
-  try {
-    const candidates = [
-      raceJianpianOrigins([primary, ...knownOrigins], path, query, primaryTimeout, failures, signal, attempted),
-      discovery.then((origins) =>
-        raceJianpianOrigins(origins, path, query, fallbackTimeout, failures, signal, attempted)
-      )
-    ]
-    parsed = await Promise.any(candidates)
-  } catch {
-    parsed = null
-  } finally {
-    raceController.abort()
-  }
-  if (!parsed) throw new Error(`荐片接口候选域名均请求失败：${failures.join('；') || '没有可用域名'}`)
+  const parsed = await fetchJianpianOrigin(path, query, timeout, parentSignal, headers)
+  if (!parsed) throw new Error('荐片接口返回了空响应')
   if (cacheKey) {
     jianpianSearchCache.set(cacheKey, { createdAt: Date.now(), value: parsed })
     if (jianpianSearchCache.size > JIANPIAN_SEARCH_CACHE_LIMIT) {
@@ -673,15 +554,14 @@ async function searchJianpianPage(
   signal?: AbortSignal
 ): Promise<Vod[]> {
   const query = new URLSearchParams({
-    key: keyword,
-    category_id: categoryId,
+    wd: keyword,
     page: String(Math.max(1, page)),
     pageSize: String(Math.max(1, Math.min(100, Number.isFinite(limit) ? limit : 100)))
   })
-  const payload = await fetchJianpianJson('/api/v2/search/videoV2', query, timeoutMs, signal)
+  const payload = await fetchJianpianJson('/api/v1/search', query, timeoutMs, signal)
   const nested = unwrap(payload, 'data', 'result', 'payload')
   const direct = firstArray(payload, 'data', 'items', 'list', 'vod_list')
-  const raw = direct.length ? direct : firstArray(nested, 'items', 'list', 'vod_list', 'video_list')
+  const raw = direct.length ? direct : firstArray(nested, 'list', 'items', 'vod_list', 'video_list')
   return raw
     .map((item) => makeVod(unwrap(item, 'work', 'vod'), site, 'jianpian'))
     .filter((vod) => vod.vod_id && vod.vod_name && (!filterKeyword || matchesFullSearchKeyword(vod.vod_name, keyword)))
@@ -710,6 +590,17 @@ export async function listJianpianHome(
   if (site.nativeAdapter !== 'jianpian' && site.key !== 'jianpian') return []
   const query = keyword.trim() || '热播'
   try {
+    const payload = await fetchJianpianJson('/api/v1/home/category-movies', new URLSearchParams({
+      filter: `${categoryId}_0`
+    }))
+    const data = asObject(payload.data)
+    const raw = Array.isArray(payload.data)
+      ? payload.data
+      : firstArray(data, 'list', 'items', 'vod_list')
+    const items = raw.map((item) => makeVod(unwrap(item, 'vod', 'item'), site, 'jianpian'))
+      .filter((vod) => vod.vod_id && vod.vod_name)
+      .slice(0, limit)
+    if (items.length) return items
     return await searchJianpianPage(site, query, 1, limit, categoryId, false)
   } catch (error) {
     if (query === '热播') throw error
@@ -728,11 +619,12 @@ export async function testCongcongSource(site: Site): Promise<string> {
 
 async function detailJianpian(site: Site, id: string): Promise<VodDetail> {
   const query = new URLSearchParams({ id })
-  const outer = await fetchJianpianJson('/api/video/detailv2', query)
+  const outer = await fetchJianpianJson('/api/v1/video/detail', query)
   const raw = unwrap(outer, 'data')
   const vod = makeVod(raw, site, 'jianpian')
   vod.vod_pic = resolveImageField(vod.vod_pic)
-  return toDetail(vod, firstText(raw, 'description', 'synopsis', 'summary', 'content'), mapJianpianLines(raw))
+  const lines = mapJianpianNormalLines(raw)
+  return toDetail(vod, firstText(raw, 'vodcontent', 'description', 'synopsis', 'summary', 'content'), lines)
 }
 
 function mergeGuaziMetadata(a: Record<string, any>, b: Record<string, any>): Record<string, any> {

@@ -5,7 +5,7 @@ import { readStore, writeStore } from './store'
 const NAME = 'settings'
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  settingsVersion: 4,
+  settingsVersion: 5,
   concurrency: 10,
   language: 'zh-CN',
   timeout: 3,
@@ -17,8 +17,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   density: 'compact',
   sidebarCollapsed: false,
   homeSourceKey: 'guazi',
-  // 采集站里「XX解说 / 一口气看完」这类二创短片和正片同名同封面，默认挡掉
-  filterCommentary: true,
+  filterCommentary: false,
   filterAdult: true,
   m3u8Purify: true,
   danmakuEnabled: true,
@@ -40,13 +39,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export async function getSettings(): Promise<AppSettings> {
   const stored = await readStore<Partial<AppSettings>>(NAME, {})
   const storedVersion = stored.settingsVersion ?? 0
-  const needsMigration = storedVersion < 4
+  const needsMigration = storedVersion < 5
   const storedConcurrency = Number(stored.concurrency)
   const storedTimeout = Number(stored.timeout)
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...stored,
-    settingsVersion: 4,
+    settingsVersion: 5,
     concurrency: storedVersion < 3 && stored.concurrency === 8
       ? 10
       : Number.isFinite(storedConcurrency)
@@ -61,6 +60,7 @@ export async function getSettings(): Promise<AppSettings> {
     singleSourceTimeoutSeconds: Number.isFinite(stored.singleSourceTimeoutSeconds)
       ? Math.max(1, Math.min(10, Math.trunc(stored.singleSourceTimeoutSeconds ?? DEFAULT_SETTINGS.singleSourceTimeoutSeconds)))
       : DEFAULT_SETTINGS.singleSourceTimeoutSeconds,
+    filterCommentary: stored.filterCommentary ?? DEFAULT_SETTINGS.filterCommentary,
     filterAdult: true,
     externalPlayer: { ...DEFAULT_SETTINGS.externalPlayer, ...(stored.externalPlayer ?? {}) },
     window: { ...DEFAULT_SETTINGS.window, ...(stored.window ?? {}) },

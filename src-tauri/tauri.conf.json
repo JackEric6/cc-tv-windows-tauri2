@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "丛丛影视",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "identifier": "com.congcong.tv.windows.tauri2",
   "build": {
     "beforeDevCommand": "npm run dev:web",
@@ -32,7 +32,7 @@
     "resources": {
       "../dist/backend.cjs": "backend.cjs",
       "resources/node.exe": "node.exe",
-      "../build/new_ico/cc-tv-windows-icon-1.0.25.ico": "cc-tv-windows-icon-1.0.25.ico"
+      "../build/new_ico/cc-tv-windows-icon-1.0.26.ico": "cc-tv-windows-icon-1.0.26.ico"
     },
     "windows": {
       "webviewInstallMode": {

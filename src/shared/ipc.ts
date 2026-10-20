@@ -11,7 +11,6 @@ export const IPC = {
 
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
-
   sourcesList: 'sources:list',
   sourcesAdd: 'sources:add',
   sourcesUpdate: 'sources:update',

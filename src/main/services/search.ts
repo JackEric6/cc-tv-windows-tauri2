@@ -329,13 +329,15 @@ export async function searchAll(
 
   const token = ++currentToken
   const all = await searchableSites()
+  if (token !== currentToken) return { wd: keyword, ms: Date.now() - started, total: 0, results: [] }
   const targets = options.sites?.length
     ? all.filter((s) => options.sites?.includes(s.key))
     : all
   if (!targets.length) return { wd: keyword, ms: 0, total: 0, results: [] }
-  onStart?.(targets.length)
 
   const settings = await getSettings()
+  if (token !== currentToken) return { wd: keyword, ms: Date.now() - started, total: 0, results: [] }
+  onStart?.(targets.length)
   const concurrency = Math.max(
     1,
     Math.min(32, options.concurrency ?? settings.concurrency ?? 10)

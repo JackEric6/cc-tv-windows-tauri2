@@ -60,7 +60,7 @@ jobs:
           Get-ChildItem -LiteralPath $portableInstall -Force | Copy-Item -Destination $portableStage -Recurse -Force
           Remove-Item -LiteralPath (Join-Path $portableStage 'uninstall.exe') -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath (Join-Path $portableStage 'uninstall.dat') -Force -ErrorAction SilentlyContinue
-          foreach ($requiredFile in @('congcong-tv-windows-tauri2.exe', 'backend.cjs', 'node.exe', 'cc-tv-windows-icon-1.0.25.ico')) {
+          foreach ($requiredFile in @('congcong-tv-windows-tauri2.exe', 'backend.cjs', 'node.exe', 'cc-tv-windows-icon-1.0.26.ico')) {
             if (-not (Test-Path -LiteralPath (Join-Path $portableStage $requiredFile))) {
               throw "Portable package is missing $requiredFile"
             }

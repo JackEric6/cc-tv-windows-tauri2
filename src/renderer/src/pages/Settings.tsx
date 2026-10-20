@@ -282,7 +282,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       <section className="section">
         <div className="section-head">
           <div className="section-title">{translate("开发里程碑")}</div>
-          <div className="section-more">{translate("当前版本：1.0.25")}</div>
+          <div className="section-more">{translate("当前版本：1.0.26")}</div>
         </div>
         <div className="milestones">
           <div className="milestone done">
@@ -499,7 +499,6 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
         {settingsTab === 'general' && settings && settingsDraft ? (
           <AiSettingsSection settings={settings} draft={settingsDraft} setDraft={(next) => setSettingsDraft(next)} />
         ) : null}
-
         {settingsTab === 'sources' ? <section className="section">
           <div className="section-head">
             <div className="section-title">{translate("配置格式")}</div>
@@ -783,24 +782,24 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
 
   const checkUpdates = async (): Promise<void> => {
     setUpdateBusy(true)
-    setUpdateStatus('正在检查 GitHub Release…')
+    setUpdateStatus(translate('正在检查 GitHub Release…'))
     try {
       const update = await window.api.updater.check()
       if (!update.hasUpdate) {
-        setUpdateStatus(`当前已是最新版本 v${update.currentVersion}`)
+        setUpdateStatus(`${translate('当前已是最新版本')} v${update.currentVersion}`)
         return
       }
       const skippedVersion = localStorage.getItem('cc-tv-skipped-update-version')
       if (skippedVersion === update.latestVersion) {
-        setUpdateStatus(`已跳过版本 v${update.latestVersion}`)
+        setUpdateStatus(`${translate('已跳过版本')} v${update.latestVersion}`)
         return
       }
-      setUpdateStatus(`发现新版本 v${update.latestVersion}`)
+      setUpdateStatus(`${translate('发现新版本')} v${update.latestVersion}`)
       onUpdateFound({ version: update.latestVersion, currentVersion: update.currentVersion, notes: update.notes.slice(0, 1600) })
     } catch (error) {
       const message = (error as Error).message
-      setUpdateStatus(`检查更新失败：${message}`)
-      notify(`检查更新失败：${message}`, 'danger')
+      setUpdateStatus(`${translate('检查更新失败：')}${message}`)
+      notify(`${translate('检查更新失败：')}${message}`, 'danger')
     } finally {
       setUpdateBusy(false)
     }
@@ -899,13 +898,6 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
             <div className="field-hint">{translate("普通接口与详情请求的等待时间；聚合搜索单源截止时间单独设置")}</div>
           </div>
           <div className="field">
-            <label>软件更新</label>
-            <button type="button" className="btn btn-sm" disabled={updateBusy} onClick={() => void checkUpdates()}>
-              {updateBusy ? <span className="spin" /> : <Icon name="refresh" size={14} />}{updateBusy ? '正在检查…' : '检查更新'}
-            </button>
-            {updateStatus ? <div className="field-hint">{updateStatus}</div> : <div className="field-hint">启动后 3 秒自动检查 GitHub Release</div>}
-          </div>
-          <div className="field">
             <label>{translate("单源请求截止（秒）")}</label>
             <input
               className="input"
@@ -995,7 +987,7 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
                 {translate(draft.filterCommentary ? '隐藏解说 / 速看 / 混剪' : '全部显示')}
               </span>
             </div>
-            <div className="field-hint">{translate("采集站常把「XX解说」「一口气看完」和正片放一起，默认挡掉")}</div>
+            <div className="field-hint">{translate("开启后隐藏「XX解说」「一口气看完」等二创内容")}</div>
           </div>
           <div className="field" style={{ flex: '1 1 220px' }}>
             <label>{translate("M3U8 净化")}</label>
@@ -1033,6 +1025,16 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
               onChange={(event) => setDraft({ ...draft, outroSkipSeconds: clampInt(event.target.value, 0, 600, 0) })}
             />
           </div>
+        </div>
+
+        <div className="settings-update-row">
+          <div>
+            <div className="settings-subhead">{translate('软件更新')}</div>
+            <div className="field-hint">{updateStatus || translate('启动后 3 秒自动检查 GitHub Release')}</div>
+          </div>
+          <button type="button" className="btn btn-sm" disabled={updateBusy} onClick={() => void checkUpdates()}>
+            {updateBusy ? <span className="spin" /> : <Icon name="refresh" size={14} />}{translate(updateBusy ? '正在检查更新…' : '检查更新')}
+          </button>
         </div>
 
         <div className="field" style={{ marginTop: 8 }}>

@@ -58,7 +58,6 @@ const api = {
     set: (patch: Partial<AppSettings>): Promise<AppSettings> =>
       ipcRenderer.invoke(IPC.settingsSet, patch)
   },
-
   sources: {
     list: (): Promise<ConfigSource[]> => ipcRenderer.invoke(IPC.sourcesList),
     add: (input: { name?: string; url: string; kind?: 'url' | 'file' }): Promise<ConfigSource> =>
