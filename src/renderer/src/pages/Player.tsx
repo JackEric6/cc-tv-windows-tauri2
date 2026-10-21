@@ -15,7 +15,6 @@ import { isDirectMedia, isHls, pickPlayableLine } from '@/utils/media'
 import { formatClock } from '@/utils/format'
 import { normalizeName } from '@/utils/normalize'
 import { translate } from '@/i18n'
-import { androidSearchPriority, circledOrdinal, sourceOrdinal } from '@shared/searchSourcePolicy'
 
 const DANMAKU_INITIAL_BATCH_SIZE = 500
 const DANMAKU_APPEND_BATCH_SIZE = 1000
@@ -25,10 +24,14 @@ const FULLSCREEN_CONTROL_HOVER_HEIGHT = 112
 const FULLSCREEN_PAUSE_PEEK_MS = 1000
 const FULLSCREEN_PLAY_IDLE_MS = 3200
 const INLINE_CONTROL_IDLE_MS = 3000
-const PREVIEW_FRAME_INTERVAL_SECONDS = 20
+const PREVIEW_FRAME_BUCKET_SECONDS = 10
+const PREVIEW_INITIAL_SCAN_INTERVAL_SECONDS = 20
+const PREVIEW_REFINEMENT_SCAN_INTERVAL_SECONDS = 10
+const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
+const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 48
 const KEYBOARD_SEEK_UPDATE_INTERVAL_MS = 33
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -36,6 +39,16 @@ const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 type SkipMarkerKey = 'introSkipSeconds' | 'outroSkipAtSeconds'
 type SavedSkipMarkers = Record<string, Partial<Record<SkipMarkerKey, number>>>
 type LegacySkipMarkers = Record<string, Partial<Record<'introSkipSeconds' | 'outroSkipSeconds', number>>>
+
+function getKeyboardSeekTarget(start: number, direction: number, elapsedMs: number, limit: number): number {
+  const elapsedSeconds = Math.max(0, elapsedMs / 1000)
+  const distance = elapsedMs < KEYBOARD_SEEK_TAP_THRESHOLD_MS
+    ? 10
+    : 10 + KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND * (elapsedSeconds - KEYBOARD_SEEK_TAP_THRESHOLD_MS / 1000) +
+      0.5 * KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED *
+      (elapsedSeconds - KEYBOARD_SEEK_TAP_THRESHOLD_MS / 1000) ** 2
+  return Math.max(0, Math.min(limit, start + direction * distance))
+}
 
 function readSkipMarkers(): SavedSkipMarkers {
   try {
@@ -85,7 +98,7 @@ function formatMarkerTime(seconds: number): string {
 
 function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number, bucketSeconds = seconds): string | null {
   if (media.readyState < 2 || media.videoWidth <= 0 || media.videoHeight <= 0 || !Number.isFinite(seconds)) return null
-  const bucket = Math.floor(bucketSeconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+  const bucket = Math.floor(bucketSeconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
   const cached = cache.get(bucket)
   if (cached) return cached
   try {
@@ -168,7 +181,6 @@ export function Player({
   const stageRef = useRef<HTMLDivElement>(null)
   const progressPreviewContainerRef = useRef<HTMLDivElement>(null)
   const previewFramesRef = useRef(new Map<number, string>())
-  const seekOverlayTimerRef = useRef<number | undefined>(undefined)
   const playerActionTimerRef = useRef<number | undefined>(undefined)
   const pointerInsidePlayer = useRef(false)
   const heldSeekKeys = useRef(new Set<string>())
@@ -244,7 +256,6 @@ export function Player({
   const [playbackSource, setPlaybackSource] = useState<{ url: string; hls: boolean } | null>(null)
   const [previewFrameReady, setPreviewFrameReady] = useState(false)
   const [previewFrameSrc, setPreviewFrameSrc] = useState('')
-  const [seekOverlaySrc, setSeekOverlaySrc] = useState('')
   const [playerActionFeedback, setPlayerActionFeedback] = useState('')
   const [systemClock, setSystemClock] = useState(() => new Date())
   const [legacySkipMarkers] = useState<LegacySkipMarkers>(readLegacySkipMarkers)
@@ -553,7 +564,6 @@ export function Player({
       setError('')
       previewFramesRef.current.clear()
       setPreviewFrameSrc('')
-      setSeekOverlaySrc('')
       const player = createVideoPlayer(el, {
         url,
         accent: settings?.accent,
@@ -580,27 +590,15 @@ export function Player({
         const currentTime = Number(player.currentTime())
         if (media) cachePreviewFrame(previewFramesRef.current, media, currentTime)
       }
-      const getCachedPreviewFrame = (seconds: number): string => {
-        const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
-        const exact = previewFramesRef.current.get(bucket)
-        if (exact) return exact
-        let closest: { time: number; src: string } | undefined
-        for (const [time, src] of previewFramesRef.current) {
-          if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
-            closest = { time, src }
-          }
-        }
-        return closest?.src ?? ''
-      }
       let previewScanPlayer: VideoPlayer | null = null
       let previewScanHost: HTMLDivElement | null = null
       let previewScanStopped = false
       let previewScanStarted = false
+      let previewScanRefining = false
       let previewScanTimer: number | undefined
       let stablePlaybackTimer: number | undefined
       let scanSeekTimer: number | undefined
       let scanSeekListener: (() => void) | undefined
-      let mainPlayerWaiting = false
       const previewScannedTargets = new Set<number>()
       const previewScanFailures = new Map<number, number>()
       let activePreviewScanTarget = 0
@@ -614,22 +612,6 @@ export function Player({
           media.removeEventListener('seeked', scanSeekListener)
           media.removeEventListener('loadeddata', scanSeekListener)
         }
-        previewScanPlayer?.dispose()
-        previewScanPlayer = null
-        previewScanHost?.remove()
-        previewScanHost = null
-      }
-      const pausePreviewScan = (): void => {
-        if (previewScanTimer !== undefined) window.clearTimeout(previewScanTimer)
-        if (scanSeekTimer !== undefined) window.clearTimeout(scanSeekTimer)
-        previewScanTimer = undefined
-        scanSeekTimer = undefined
-        const media = previewScanPlayer?.tech(true)?.el() as HTMLVideoElement | undefined
-        if (media && scanSeekListener) {
-          media.removeEventListener('seeked', scanSeekListener)
-          media.removeEventListener('loadeddata', scanSeekListener)
-        }
-        scanSeekListener = undefined
         previewScanPlayer?.dispose()
         previewScanPlayer = null
         previewScanHost?.remove()
@@ -667,11 +649,7 @@ export function Player({
       }
       const scanNextPreviewFrame = (): void => {
         if (previewScanStopped || player.isDisposed()) return
-        if (mainPlayerWaiting || player.paused()) {
-          schedulePreviewScan(1800)
-          return
-        }
-        if (!visibleRef.current || previewHoveringRef.current) {
+        if (previewHoveringRef.current) {
           schedulePreviewScan(900)
           return
         }
@@ -680,12 +658,20 @@ export function Player({
           schedulePreviewScan(900)
           return
         }
+        const interval = previewScanRefining
+          ? PREVIEW_REFINEMENT_SCAN_INTERVAL_SECONDS
+          : PREVIEW_INITIAL_SCAN_INTERVAL_SECONDS
         let target = 0
         while (target < duration && (previewFramesRef.current.has(target) || previewScannedTargets.has(target))) {
-          target += PREVIEW_FRAME_INTERVAL_SECONDS
+          target += interval
         }
         if (target >= duration) {
-          stopPreviewScan()
+          if (!previewScanRefining) {
+            previewScanRefining = true
+            schedulePreviewScan(0)
+          } else {
+            stopPreviewScan()
+          }
           return
         }
         activePreviewScanTarget = target
@@ -792,22 +778,22 @@ export function Player({
       })
       player.on('playing', () => {
         hasPlayed = true
-        mainPlayerWaiting = false
         setIsPlaying(true)
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         stablePlaybackTimer = window.setTimeout(() => {
           if (previewScanStarted) schedulePreviewScan(1800)
           else startPreviewScan()
-        }, 3000)
+        }, PREVIEW_SCAN_START_DELAY_MS)
       })
       player.on('waiting', () => {
-        mainPlayerWaiting = true
         if (stablePlaybackTimer !== undefined) window.clearTimeout(stablePlaybackTimer)
         stablePlaybackTimer = undefined
-        if (previewScanStarted) pausePreviewScan()
       })
       player.on('pause', () => {
-        if (previewScanStarted) pausePreviewScan()
+        if (!previewScanStarted && stablePlaybackTimer !== undefined) {
+          window.clearTimeout(stablePlaybackTimer)
+          stablePlaybackTimer = undefined
+        }
         setIsPlaying(false)
         if (document.fullscreenElement !== stageRef.current) return
         setPlayerControlsVisible(true)
@@ -842,20 +828,7 @@ export function Player({
           navigateEpisodeRef.current(nextEpisodeRef.current)
         }
       })
-      player.on('seeking', () => {
-        const frame = getCachedPreviewFrame(Number(player.currentTime()) || 0)
-        if (!frame) return
-        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
-        setSeekOverlaySrc(frame)
-        seekOverlayTimerRef.current = window.setTimeout(() => {
-          seekOverlayTimerRef.current = undefined
-          setSeekOverlaySrc('')
-        }, 1800)
-      })
       player.on('seeked', () => {
-        if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
-        seekOverlayTimerRef.current = undefined
-        setSeekOverlaySrc('')
         capturePreviewFrame()
       })
       player.on('pause', () => save(true))
@@ -1132,16 +1105,13 @@ export function Player({
       const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
       const elapsed = performance.now() - keyboardSeekStartedAtRef.current
       const start = keyboardSeekStartPositionRef.current
-      const target = elapsed < KEYBOARD_SEEK_TAP_THRESHOLD_MS
-        ? Math.max(0, Math.min(limit, start + direction * 10))
-        : Math.max(0, Math.min(limit,
-          start + direction * elapsed / 1000 * KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND))
+      const target = getKeyboardSeekTarget(start, direction, elapsed, limit)
       keyboardSeekDirectionRef.current = 0
       keyboardSeekTargetRef.current = target
       activePlayer.currentTime(target)
       setPlaybackPosition(target)
       setKeyboardSeeking(true)
-      scheduleKeyboardSeekSync(500)
+      scheduleKeyboardSeekSync(15_000)
       scheduleInlineControlsHide(300)
       flashPlayerAction(`${direction < 0 ? '−' : '+'}${Math.max(1, Math.round(Math.abs(target - start)))} 秒`)
     }
@@ -1161,14 +1131,18 @@ export function Player({
       setKeyboardSeeking(true)
       setPlaybackPosition(current)
       setPlayerControlsVisible(true)
-      scheduleInlineControlsHide(INLINE_CONTROL_IDLE_MS)
+      clearInlineControlsTimer()
       keyboardSeekAnimationTimerRef.current = window.setInterval(() => {
         if (!activePlayer || activePlayer.isDisposed()) return
         const duration = Number(activePlayer.duration())
         const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
         const elapsed = (performance.now() - keyboardSeekStartedAtRef.current) / 1000
-        const target = Math.max(0, Math.min(limit,
-          keyboardSeekStartPositionRef.current + keyboardSeekDirectionRef.current * elapsed * KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND))
+        const target = getKeyboardSeekTarget(
+          keyboardSeekStartPositionRef.current,
+          keyboardSeekDirectionRef.current,
+          elapsed * 1000,
+          limit
+        )
         keyboardSeekTargetRef.current = target
         setPlaybackPosition(target)
       }, KEYBOARD_SEEK_UPDATE_INTERVAL_MS)
@@ -1210,6 +1184,16 @@ export function Player({
       commitKeyboardSeek()
       heldSeekKeys.current.clear()
     }
+    const onSeeked = (): void => {
+      if (keyboardSeekDirectionRef.current !== 0 || keyboardSeekTargetRef.current === null || !activePlayer || activePlayer.isDisposed()) return
+      const position = Number(activePlayer.currentTime())
+      if (!Number.isFinite(position) || Math.abs(position - keyboardSeekTargetRef.current) > 2) return
+      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
+      keyboardSeekTimerRef.current = undefined
+      keyboardSeekTargetRef.current = null
+      setKeyboardSeeking(false)
+      setPlaybackPosition(position)
+    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1226,6 +1210,7 @@ export function Player({
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
     window.addEventListener('blur', onBlur)
+    activePlayer?.on('seeked', onSeeked)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (keyboardSeekAnimationTimerRef.current !== undefined) window.clearInterval(keyboardSeekAnimationTimerRef.current)
@@ -1242,9 +1227,10 @@ export function Player({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
+      activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
-  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide])
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
@@ -1301,12 +1287,12 @@ export function Player({
     }
     previewHoveringRef.current = true
     previewLastXRef.current = x
-    const bucket = Math.floor(seconds / PREVIEW_FRAME_INTERVAL_SECONDS) * PREVIEW_FRAME_INTERVAL_SECONDS
+    const bucket = Math.floor(seconds / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
     let frame = previewFramesRef.current.get(bucket) ?? ''
     if (!frame) {
       let closest: { time: number; src: string } | undefined
       for (const [time, src] of previewFramesRef.current) {
-        if (Math.abs(time - seconds) <= PREVIEW_FRAME_INTERVAL_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
+        if (Math.abs(time - seconds) <= PREVIEW_FRAME_BUCKET_SECONDS && (!closest || Math.abs(time - seconds) < Math.abs(closest.time - seconds))) {
           closest = { time, src }
         }
       }
@@ -1417,7 +1403,6 @@ export function Player({
   useEffect(() => () => {
     if (previewSeekTimerRef.current !== undefined) window.clearTimeout(previewSeekTimerRef.current)
     if (previewHideTimerRef.current !== undefined) window.clearTimeout(previewHideTimerRef.current)
-    if (seekOverlayTimerRef.current !== undefined) window.clearTimeout(seekOverlayTimerRef.current)
     previewPlayerRef.current?.dispose()
     previewPlayerRef.current = null
   }, [])
@@ -1529,9 +1514,6 @@ export function Player({
     ? Math.min(100, Math.max(0, playbackPosition / playbackDuration * 100))
     : 0
   const fullscreenTime = `${String(systemClock.getHours()).padStart(2, '0')}:${String(systemClock.getMinutes()).padStart(2, '0')}`
-  const orderedSources = [...sources].sort((a, b) =>
-    androidSearchPriority(a.siteKey, a.siteName) - androidSearchPriority(b.siteKey, b.siteName)
-  )
 
   const updateProgressPreview = (event: ReactPointerEvent<HTMLInputElement>): void => {
     updateProgressPreviewAt(event.clientX, event.currentTarget.getBoundingClientRect())
@@ -1575,7 +1557,7 @@ export function Player({
           {detail.vod_name}
         </span>
         <span className="text-3 fs-12">
-          {circledOrdinal(lineIndex + 1)} · {episode.name}
+          {line?.name} · {episode.name}
         </span>
         {!isFullscreen ? (
           <button
@@ -1636,7 +1618,6 @@ export function Player({
               className={`player-stage-inner${keyboardSeeking ? ' keyboard-seeking' : ''}`}
               style={{ '--keyboard-seek-progress': `${fullscreenProgress}%` } as CSSProperties}
             />
-            {seekOverlaySrc ? <img className="player-seek-preview-frame" src={seekOverlaySrc} alt="" aria-hidden="true" /> : null}
             {playerActionFeedback ? <div className="player-action-feedback" aria-live="polite">{playerActionFeedback}</div> : null}
             <DanmakuCanvas
               player={activePlayer}
@@ -1992,7 +1973,7 @@ export function Player({
             <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-side" />
             <div>
               <div className="player-side-title">{detail.vod_name}</div>
-              <div className="text-3 fs-12">{circledOrdinal(lineIndex + 1)}</div>
+              <div className="text-3 fs-12">{line?.name}</div>
               <div className="text-3 fs-12">{translate("\n                第 ")}{epIndex + 1} / {episodes.length}{translate(" 集\n              ")}</div>
             </div>
           </div>
@@ -2006,10 +1987,10 @@ export function Player({
                     key={`${item.name}-${index}`}
                     type="button"
                     className={`chip chip-source${index === lineIndex ? ' active' : ''}`}
-                    title={`${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
+                    title={`${item.name} · ${item.episodes.length} 集`}
                     onClick={() => navigateToLine(index)}
                   >
-                    {circledOrdinal(index + 1)}
+                    {item.name}
                   </button>
                 ))}
               </div>
@@ -2025,20 +2006,18 @@ export function Player({
             </div>
             {sources.length > 1 ? (
               <div className="source-chips">
-                {orderedSources.map((v) => {
-                  const ordinal = sourceOrdinal(v.siteKey, v.siteName)
-                  const sourceLabel = ordinal ? circledOrdinal(ordinal) : ''
+                {sources.map((v) => {
                   const active = v.siteKey === siteKey && v.vod_id === vodId
                   const title = v.vod_name && v.vod_name !== detail.vod_name
-                    ? `该片源片名：${v.vod_name}`
-                    : sourceLabel
+                    ? `${v.siteName}（该源片名：${v.vod_name}）`
+                    : v.siteName
                   return active ? (
                     <span
                       key={`${v.siteKey}/${v.vod_id}`}
                       className="chip chip-source active"
                       title={`${title} · 正在看`}
                     >
-                      {sourceLabel}
+                      {v.siteName}
                     </span>
                   ) : (
                     <Link
@@ -2048,7 +2027,7 @@ export function Player({
                       to={`/play/${encodeURIComponent(v.siteKey)}/${encodeURIComponent(v.vod_id)}/0/0`}
                       state={playerRouteState}
                     >
-                      {sourceLabel}
+                      {v.siteName}
                     </Link>
                   )
                 })}
