@@ -95,19 +95,21 @@ const GITHUB_ACCEL_PREFIXES = [
 const GITHUB_API_PROBE_LIMIT = 12
 const GITHUB_DOWNLOAD_PROBE_LIMIT = 56
 const GITHUB_DOWNLOAD_PROBE_CONCURRENCY = 10
-const GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES = 96 * 1024
-const GITHUB_DOWNLOAD_PROBE_WINDOW_MS = 2200
+const GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES = 64 * 1024
+const GITHUB_DOWNLOAD_PROBE_WINDOW_MS = 1000
 const GITHUB_DOWNLOAD_FINALIST_COUNT = 3
-const GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES = 1536 * 1024
-const GITHUB_DOWNLOAD_FINAL_WINDOW_MS = 3000
+const GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES = 512 * 1024
+const GITHUB_DOWNLOAD_FINAL_WINDOW_MS = 1200
 const GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES = 64 * 1024
-const GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND = 2 * 1024 * 1024
+const GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND = 1 * 1024 * 1024
 const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
+const GITHUB_API_REQUEST_TIMEOUT_MS = 5000
 const DOWNLOAD_RANGE_CHUNK_BYTES = 1024 * 1024
 const DOWNLOAD_RANGE_CONCURRENCY = 4
 const DOWNLOAD_RANGE_TIMEOUT_MS = 10 * 60_000
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000
+const DOWNLOAD_ROUTE_ATTEMPT_TIMEOUT_MS = 20_000
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 
 interface GitHubRelease {
@@ -115,6 +117,18 @@ interface GitHubRelease {
   body?: unknown
   assets?: Array<{ name?: unknown; size?: unknown; digest?: unknown; content_type?: unknown }>
 }
+
+interface LatestReleaseInfo {
+  currentVersion: string
+  latestVersion: string
+  notes: string
+  assetName: string
+  assetSize: number
+  digest: string
+}
+
+let cachedLatestRelease: LatestReleaseInfo | undefined
+let cachedLatestReleaseAt = 0
 
 function versionParts(value: string): number[] | null {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value.trim())
@@ -256,7 +270,7 @@ async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: num
           if (sample.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES &&
             sample.bytesPerSecond >= GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND) {
             fastRoute = sample
-            controller.abort(new Error('已找到超过 2 MB/s 的下载线路'))
+            controller.abort(new Error('已找到超过 1 MB/s 的下载线路'))
           }
         } catch {
           samples[index] = undefined
@@ -343,7 +357,7 @@ async function fetchReleaseAsset(urls: string[], expectedSize: number, signal: A
     try {
       const response = await networkFetch(url, {
         headers: { 'Accept-Encoding': 'identity' },
-        signal
+        signal: AbortSignal.any([signal, AbortSignal.timeout(DOWNLOAD_ROUTE_ATTEMPT_TIMEOUT_MS)])
       })
       const lengthHeader = response.headers.get('content-length')
       const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
@@ -473,7 +487,10 @@ async function downloadRangedAsset(
   }
 }
 
-async function getLatestRelease(): Promise<{ currentVersion: string; latestVersion: string; notes: string; assetName: string; assetSize: number; digest: string }> {
+async function getLatestRelease(): Promise<LatestReleaseInfo> {
+  if (cachedLatestRelease && Date.now() - cachedLatestReleaseAt < 60_000) {
+    return cachedLatestRelease
+  }
   const urls = [
     ...GITHUB_ACCEL_PREFIXES.slice(0, GITHUB_API_PROBE_LIMIT).map((prefix) => `${prefix}https://api.github.com/repos/${REPOSITORY}/releases/latest`),
     `https://api.github.com/repos/${REPOSITORY}/releases/latest`
@@ -485,7 +502,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     release = await Promise.any(urls.map(async (url, index) => {
       const response = await networkFetch(url, {
         headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-        signal: AbortSignal.any([controllers[index].signal, AbortSignal.timeout(12_000)])
+        signal: AbortSignal.any([controllers[index].signal, AbortSignal.timeout(GITHUB_API_REQUEST_TIMEOUT_MS)])
       })
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined)
@@ -514,7 +531,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
   if (typeof asset.digest !== 'string' || !/^sha256:[a-f\d]{64}$/i.test(asset.digest)) {
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
-  return {
+  const result: LatestReleaseInfo = {
     currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.31',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
@@ -522,6 +539,9 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     assetSize: asset.size,
     digest: asset.digest.slice('sha256:'.length).toLowerCase()
   }
+  cachedLatestRelease = result
+  cachedLatestReleaseAt = Date.now()
+  return result
 }
 
 export async function checkForUpdate(): Promise<{ currentVersion: string; latestVersion: string; hasUpdate: boolean; notes: string }> {
