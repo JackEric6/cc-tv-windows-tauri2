@@ -1,6 +1,6 @@
 {
   "name": "congcong-tv-windows-tauri2",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "description": "丛丛影视 Windows 桌面客户端（Tauri 2 + WebView2 Evergreen）",
   "license": "MIT",
   "private": true,

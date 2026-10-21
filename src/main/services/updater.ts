@@ -322,7 +322,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
   return {
-    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.29',
+    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.31',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName,
