@@ -22,7 +22,8 @@ const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
 const MIRROR_LINK_PROBE_TIMEOUT_MS = 6000
 const DOWNLOAD_PROBE_BYTES = 64 * 1024
-const DOWNLOAD_RANGE_COUNT = 4
+const DOWNLOAD_RANGE_CHUNK_BYTES = 1024 * 1024
+const DOWNLOAD_RANGE_CONCURRENCY = 4
 const DOWNLOAD_RANGE_TIMEOUT_MS = 10 * 60_000
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000
 const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
@@ -226,12 +227,13 @@ async function downloadRangedAsset(
   let downloaded = 0
   try {
     await file.truncate(expectedSize)
-    const ranges = Array.from({ length: DOWNLOAD_RANGE_COUNT }, (_, index) => {
-      const start = Math.floor(expectedSize * index / DOWNLOAD_RANGE_COUNT)
-      const end = Math.floor(expectedSize * (index + 1) / DOWNLOAD_RANGE_COUNT) - 1
+    const ranges = Array.from({ length: Math.ceil(expectedSize / DOWNLOAD_RANGE_CHUNK_BYTES) }, (_, index) => {
+      const start = index * DOWNLOAD_RANGE_CHUNK_BYTES
+      const end = Math.min(expectedSize, start + DOWNLOAD_RANGE_CHUNK_BYTES) - 1
       return { start, end }
     })
-    const results = await Promise.allSettled(ranges.map(async ({ start, end }) => {
+    let nextRange = 0
+    const downloadRange = async ({ start, end }: { start: number; end: number }): Promise<void> => {
       const requestTimeout = createDownloadTimeout(controller.signal)
       try {
         const response = await networkFetch(url, {
@@ -271,7 +273,14 @@ async function downloadRangedAsset(
       } finally {
         requestTimeout.close()
       }
-    }))
+    }
+    const workers = Array.from({ length: Math.min(DOWNLOAD_RANGE_CONCURRENCY, ranges.length) }, async () => {
+      while (nextRange < ranges.length) {
+        const range = ranges[nextRange++]
+        await downloadRange(range)
+      }
+    })
+    const results = await Promise.allSettled(workers)
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failure) throw failure.reason
   } finally {
@@ -313,7 +322,7 @@ async function getLatestRelease(): Promise<{ currentVersion: string; latestVersi
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
   return {
-    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.27',
+    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.29',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName,

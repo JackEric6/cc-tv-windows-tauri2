@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      asset_suffix:
+        description: '可选资产后缀，用于同一 Release 中区分分支构建'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -44,10 +49,12 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $suffix = '${{ inputs.asset_suffix }}'.Trim()
+          $assetSuffix = if ($suffix) { "-$suffix" } else { '' }
           $installerDirectory = 'src-tauri/target/release/bundle/nsis'
           $installer = Get-ChildItem "$installerDirectory/*.exe" | Select-Object -First 1
           if (-not $installer) { throw 'Tauri installer was not created' }
-          $installerName = "cc-tv-windows-tauri2-$version-setup.exe"
+          $installerName = "cc-tv-windows-tauri2-$version$assetSuffix-setup.exe"
           Rename-Item -LiteralPath $installer.FullName -NewName $installerName
 
           $portableInstall = Join-Path $env:RUNNER_TEMP 'cc-tv-windows-tauri2-portable-install'
@@ -66,7 +73,7 @@ jobs:
               throw "Portable package is missing $requiredFile"
             }
           }
-          $portableName = "cc-tv-windows-tauri2-$version-portable.zip"
+          $portableName = "cc-tv-windows-tauri2-$version$assetSuffix-portable.zip"
           $portableZip = Join-Path $portableOutput $portableName
           Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableZip -CompressionLevel Optimal
           Add-Type -AssemblyName System.IO.Compression.FileSystem
