@@ -183,6 +183,7 @@ export function OfflinePlayer(): JSX.Element {
   }, [])
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>): void => {
+    if (event.pointerType !== 'touch') pointerInsidePlayer.current = true
     if (!isFullscreen) {
       clearHideTimer()
       setControlsVisible(true)
@@ -210,7 +211,8 @@ export function OfflinePlayer(): JSX.Element {
     const isTextInput = (target: EventTarget | null): boolean => target instanceof HTMLElement &&
       (target.isContentEditable || Boolean(target.closest('input, textarea, select, [contenteditable="true"]')))
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!pointerInsidePlayer.current || event.altKey || event.ctrlKey || event.metaKey) return
+      const pointerIsInside = pointerInsidePlayer.current || Boolean(stageRef.current?.matches(':hover'))
+      if (!pointerIsInside || event.altKey || event.ctrlKey || event.metaKey) return
       if (isTextInput(event.target) || isTextInput(document.activeElement)) return
       if (event.code === 'Space' || event.key === ' ') {
         event.preventDefault()
