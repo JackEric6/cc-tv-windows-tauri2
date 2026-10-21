@@ -31,7 +31,7 @@ const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
-const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 18
+const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 24
 const KEYBOARD_SEEK_UPDATE_INTERVAL_MS = 33
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -1111,7 +1111,7 @@ export function Player({
       activePlayer.currentTime(target)
       setPlaybackPosition(target)
       setKeyboardSeeking(true)
-      scheduleKeyboardSeekSync(500)
+      scheduleKeyboardSeekSync(15_000)
       scheduleInlineControlsHide(300)
       flashPlayerAction(`${direction < 0 ? '−' : '+'}${Math.max(1, Math.round(Math.abs(target - start)))} 秒`)
     }
@@ -1184,6 +1184,16 @@ export function Player({
       commitKeyboardSeek()
       heldSeekKeys.current.clear()
     }
+    const onSeeked = (): void => {
+      if (keyboardSeekDirectionRef.current !== 0 || keyboardSeekTargetRef.current === null || !activePlayer || activePlayer.isDisposed()) return
+      const position = Number(activePlayer.currentTime())
+      if (!Number.isFinite(position) || Math.abs(position - keyboardSeekTargetRef.current) > 2) return
+      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
+      keyboardSeekTimerRef.current = undefined
+      keyboardSeekTargetRef.current = null
+      setKeyboardSeeking(false)
+      setPlaybackPosition(position)
+    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1200,6 +1210,7 @@ export function Player({
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
     window.addEventListener('blur', onBlur)
+    activePlayer?.on('seeked', onSeeked)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (keyboardSeekAnimationTimerRef.current !== undefined) window.clearInterval(keyboardSeekAnimationTimerRef.current)
@@ -1216,6 +1227,7 @@ export function Player({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
+      activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
   }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide])
