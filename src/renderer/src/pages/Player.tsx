@@ -13,6 +13,7 @@ import { detailKey, findSourceGroup, libraryKey, toFavoriteInput, useApp } from 
 import { createVideoPlayer, seekVideoPlayer, type VideoPlayer } from '@/utils/videojs'
 import { isDirectMedia, isHls, pickPlayableLine } from '@/utils/media'
 import { formatClock } from '@/utils/format'
+import { loadPreviewFrames, savePreviewFrame } from '@/utils/previewFrameCache'
 import { normalizeName } from '@/utils/normalize'
 import { translate } from '@/i18n'
 
@@ -94,6 +95,16 @@ function formatMarkerTime(seconds: number): string {
   return hours > 0
     ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
     : `${minutes}:${String(remainder).padStart(2, '0')}`
+}
+
+function formatSeekDelta(seconds: number): string {
+  const value = Math.max(1, Math.round(seconds))
+  const hours = Math.floor(value / 3600)
+  const minutes = Math.floor((value % 3600) / 60)
+  const remainder = value % 60
+  if (hours > 0) return `${hours}小时${minutes}分${remainder}秒`
+  if (value >= 60) return `${minutes}分${remainder}秒`
+  return `${remainder}秒`
 }
 
 function cachePreviewFrame(cache: Map<number, string>, media: HTMLVideoElement, seconds: number, bucketSeconds = seconds): string | null {
@@ -560,6 +571,7 @@ export function Player({
     }
 
     const mount = (url: string, hls: boolean, fallbackUrl = ''): void => {
+      const previewCacheScope = `${siteKey}\u001f${vodId}\u001f${lineIndex}\u001f${epIndex}\u001f${url}`
       setPlaybackSource({ url, hls })
       setError('')
       previewFramesRef.current.clear()
@@ -575,6 +587,12 @@ export function Player({
       playerBox.current = player
       playerRef.current = player
       setActivePlayer(player)
+      void loadPreviewFrames(previewCacheScope).then((frames) => {
+        if (playerRef.current !== player || player.isDisposed()) return
+        for (const [seconds, frame] of frames) {
+          if (!previewFramesRef.current.has(seconds)) previewFramesRef.current.set(seconds, frame)
+        }
+      }).catch(() => undefined)
       let hasPlayed = false
       player.on('error', () => {
         if (fallbackUrl && !hasPlayed) {
@@ -588,7 +606,11 @@ export function Player({
       const capturePreviewFrame = (): void => {
         const media = player.tech(true)?.el() as HTMLVideoElement | undefined
         const currentTime = Number(player.currentTime())
-        if (media) cachePreviewFrame(previewFramesRef.current, media, currentTime)
+        if (!media) return
+        const bucket = Math.floor(currentTime / PREVIEW_FRAME_BUCKET_SECONDS) * PREVIEW_FRAME_BUCKET_SECONDS
+        if (previewFramesRef.current.has(bucket)) return
+        const frame = cachePreviewFrame(previewFramesRef.current, media, currentTime)
+        if (frame) void savePreviewFrame(previewCacheScope, bucket, frame).catch(() => undefined)
       }
       let previewScanPlayer: VideoPlayer | null = null
       let previewScanHost: HTMLDivElement | null = null
@@ -700,7 +722,8 @@ export function Player({
             schedulePreviewScan(700)
             return
           }
-          cachePreviewFrame(previewFramesRef.current, media, Number(scanPlayer.currentTime()) || target, target)
+          const frame = cachePreviewFrame(previewFramesRef.current, media, Number(scanPlayer.currentTime()) || target, target)
+          if (frame) void savePreviewFrame(previewCacheScope, target, frame).catch(() => undefined)
           previewScannedTargets.add(target)
           previewScanFailures.delete(target)
           schedulePreviewScan()
@@ -1113,12 +1136,27 @@ export function Player({
       setKeyboardSeeking(true)
       scheduleKeyboardSeekSync(15_000)
       scheduleInlineControlsHide(300)
-      flashPlayerAction(`${direction < 0 ? '−' : '+'}${Math.max(1, Math.round(Math.abs(target - start)))} 秒`)
+      flashPlayerAction(`${direction < 0 ? '−' : '+'}${formatSeekDelta(Math.abs(target - start))}`)
     }
     const startKeyboardSeek = (direction: number, key: string): void => {
       if (keyboardSeekDirectionRef.current !== 0) {
         if (keyboardSeekDirectionRef.current === direction) return
-        commitKeyboardSeek()
+        if (keyboardSeekAnimationTimerRef.current !== undefined) {
+          window.clearInterval(keyboardSeekAnimationTimerRef.current)
+          keyboardSeekAnimationTimerRef.current = undefined
+        }
+        const duration = Number(activePlayer?.duration())
+        const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
+        const elapsed = performance.now() - keyboardSeekStartedAtRef.current
+        const target = getKeyboardSeekTarget(
+          keyboardSeekStartPositionRef.current,
+          keyboardSeekDirectionRef.current,
+          elapsed,
+          limit
+        )
+        keyboardSeekTargetRef.current = target
+        setPlaybackPosition(target)
+        keyboardSeekDirectionRef.current = 0
       }
       if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
       keyboardSeekTimerRef.current = undefined
@@ -1132,8 +1170,12 @@ export function Player({
       setPlaybackPosition(current)
       setPlayerControlsVisible(true)
       clearInlineControlsTimer()
+      clearFullscreenTimer()
       keyboardSeekAnimationTimerRef.current = window.setInterval(() => {
         if (!activePlayer || activePlayer.isDisposed()) return
+        clearInlineControlsTimer()
+        clearFullscreenTimer()
+        setPlayerControlsVisible(true)
         const duration = Number(activePlayer.duration())
         const limit = Number.isFinite(duration) && duration > 0 ? duration : Number.MAX_SAFE_INTEGER
         const elapsed = (performance.now() - keyboardSeekStartedAtRef.current) / 1000
@@ -1230,7 +1272,7 @@ export function Player({
       activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
-  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer])
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer, clearFullscreenTimer])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
