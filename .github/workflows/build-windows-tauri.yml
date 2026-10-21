@@ -44,7 +44,7 @@ jobs:
           $appVersion = '${{ inputs.app_version }}'.Trim()
           if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid app version: $appVersion" }
 
-          npm version $appVersion --no-git-tag-version
+          npm version $appVersion --no-git-tag-version --allow-same-version
           if ($LASTEXITCODE -ne 0) { throw 'Failed to set npm package version' }
 
           $cargoPath = 'src-tauri/Cargo.toml'
