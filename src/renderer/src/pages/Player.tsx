@@ -571,7 +571,7 @@ export function Player({
     }
 
     const mount = (url: string, hls: boolean, fallbackUrl = ''): void => {
-      const previewCacheScope = `${siteKey}\u001f${vodId}\u001f${lineIndex}\u001f${epIndex}\u001f${url}`
+      const previewCacheScope = `${siteKey}\u001f${vodId}\u001f${lineIndex}\u001f${epIndex}\u001f${episode.url}`
       setPlaybackSource({ url, hls })
       setError('')
       previewFramesRef.current.clear()
