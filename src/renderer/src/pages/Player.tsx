@@ -1718,9 +1718,11 @@ export function Player({
                   <button type="button" className="fullscreen-control fullscreen-icon-control" onClick={togglePlayback} title={isPlaying ? '暂停' : '播放'} aria-label={isPlaying ? '暂停' : '播放'}>
                     <Icon name={isPlaying ? 'pause' : 'play'} size={16} />
                   </button>
-                  <time className="fullscreen-control fullscreen-playback-time" aria-label={translate("已播放时长和总时长")}>
-                    {formatClock(playbackPosition)} / {playbackDuration > 0 ? formatClock(playbackDuration) : '--:--'}
-                  </time>
+                  {settings?.fullscreenPlaybackTimeEnabled !== false ? (
+                    <time className="fullscreen-control fullscreen-playback-time" aria-label={translate("已播放时长和总时长")}>
+                      {formatClock(playbackPosition)} / {playbackDuration > 0 ? formatClock(playbackDuration) : '--:--'}
+                    </time>
+                  ) : null}
                   <button type="button" className="fullscreen-control" disabled={prev < 0} onClick={() => goTo(prev)}>
                     <Icon name="chevron-left" size={16} />{translate(" 上一集\n                  ")}</button>
                   <button type="button" className="fullscreen-control" disabled={next < 0} onClick={() => goTo(next)}>{translate("\n                    下一集 ")}<Icon name="chevron-right" size={16} />
@@ -1742,16 +1744,9 @@ export function Player({
                 </div>
               </div>
             ) : null}
-            {isFullscreen && (settings?.fullscreenPlaybackTimeEnabled !== false || settings?.fullscreenSystemTimeEnabled !== false) ? (
+            {isFullscreen && settings?.fullscreenSystemTimeEnabled !== false ? (
               <div className="player-fullscreen-fixed-info">
-                {settings?.fullscreenPlaybackTimeEnabled !== false ? (
-                  <time className="player-fullscreen-playback-time" aria-label={translate("已播放时长和总时长")}>
-                    {formatClock(playbackPosition)} / {playbackDuration > 0 ? formatClock(playbackDuration) : '--:--'}
-                  </time>
-                ) : null}
-                {settings?.fullscreenSystemTimeEnabled !== false ? (
-                  <time className="player-fullscreen-clock" dateTime={systemClock.toISOString()}>{fullscreenTime}</time>
-                ) : null}
+                <time className="player-fullscreen-clock" dateTime={systemClock.toISOString()}>{fullscreenTime}</time>
               </div>
             ) : null}
             <div

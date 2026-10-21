@@ -293,9 +293,11 @@ export function OfflinePlayer(): JSX.Element {
                 <button type="button" className="fullscreen-control fullscreen-icon-control" onClick={togglePlayback} title={translate(isPlaying ? '暂停' : '播放')} aria-label={translate(isPlaying ? '暂停' : '播放')}>
                   <Icon name={isPlaying ? 'pause' : 'play'} size={16} />
                 </button>
-                <time className="fullscreen-control fullscreen-playback-time">
-                  {formatClock(position)} / {duration > 0 ? formatClock(duration) : '--:--'}
-                </time>
+                {settings?.fullscreenPlaybackTimeEnabled !== false ? (
+                  <time className="fullscreen-control fullscreen-playback-time">
+                    {formatClock(position)} / {duration > 0 ? formatClock(duration) : '--:--'}
+                  </time>
+                ) : null}
                 <button type="button" className="fullscreen-control" onClick={() => setDanmakuVisible((value) => !value)}>
                   {translate(danmakuVisible ? '关闭弹幕' : '开启弹幕')}{task?.danmakuCount ? ` · ${task.danmakuCount}` : ''}
                 </button>
@@ -303,12 +305,9 @@ export function OfflinePlayer(): JSX.Element {
               </div>
             </div>
           ) : null}
-          {isFullscreen && (settings?.fullscreenPlaybackTimeEnabled !== false || settings?.fullscreenSystemTimeEnabled !== false) ? (
+          {isFullscreen && settings?.fullscreenSystemTimeEnabled !== false ? (
             <div className="player-fullscreen-fixed-info">
-              {settings?.fullscreenPlaybackTimeEnabled !== false ? (
-                <time className="player-fullscreen-playback-time">{formatClock(position)} / {duration > 0 ? formatClock(duration) : '--:--'}</time>
-              ) : null}
-              {settings?.fullscreenSystemTimeEnabled !== false ? <time className="player-fullscreen-clock">{clock}</time> : null}
+              <time className="player-fullscreen-clock">{clock}</time>
             </div>
           ) : null}
         </div>
