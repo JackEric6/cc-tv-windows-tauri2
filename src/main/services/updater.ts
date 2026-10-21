@@ -9,16 +9,92 @@ import { networkFetch } from './http'
 
 const REPOSITORY = 'JackEric6/cc-tv-windows-tauri2'
 const RELEASE_ASSET_SUFFIX = '-no-adult-filter'
-const GITHUB_API_PROXIES = [
-  'https://gh-proxy.com/https://api.github.com',
-  'https://gh.llkk.cc/https://api.github.com',
-  'https://ghfast.top/https://api.github.com'
+const GITHUB_ACCEL_PREFIXES = [
+  'https://gh-proxy.org/',
+  'https://gh.acmsz.top/',
+  'https://xsadwsd.kdns.fr/',
+  'https://ghpxy.hwinzniej.top/',
+  'https://js.jiangss.shop/',
+  'https://cfgh.ikgy.top/',
+  'https://gh.meali.top/',
+  'https://gg.z321.cc.cd/',
+  'https://fastgit.cc/',
+  'https://777.z321.cc.cd/',
+  'https://github.mxw.qzz.io/',
+  'https://gh.ddlc.top/',
+  'https://gh.chjina.com/',
+  'https://ghf.xn--eqrt2g.top/',
+  'https://ghproxy.cxkpro.top/',
+  'https://gh.idayer.com/',
+  'https://githubdog.com/',
+  'https://git.yylx.win/',
+  'https://ghproxy.imciel.com/',
+  'https://ghm.078465.xyz/',
+  'https://gitproxy.mrhjx.cn/',
+  'https://gh.monlor.com/',
+  'https://github.geekery.cn/',
+  'https://github.ednovas.xyz/',
+  'https://ghproxy.felicity.land/',
+  'https://down.mxw.xx.kg/',
+  'https://gh.qfmc0721.cc.cd/',
+  'https://github.xxlab.tech/',
+  'https://gh.jjj.gv.uy/',
+  'https://gh.felicity.ac.cn/',
+  'https://jiashu.1win.eu.org/',
+  'https://github.tbap.top/',
+  'https://gh.my-website.ccwu.cc/',
+  'https://cdn.akaere.online/',
+  'https://gh-proxy.com/',
+  'https://tvv.tw/',
+  'https://gh.07150721.xyz/',
+  'https://github.dpik.top/',
+  'https://g.blfrp.cn/',
+  'https://gh.dpik.top/',
+  'https://gh.sixyin.com/',
+  'https://ghproxy.net/',
+  'https://gh.noki.icu/',
+  'https://ghfast.top/',
+  'https://gh.catmak.name/',
+  'https://github.ikgy.top/',
+  'https://gh.inkchills.cn/',
+  'https://git.669966.xyz/',
+  'https://ghproxy.monkeyray.net/',
+  'https://ghfile.geekertao.top/',
+  'https://cdn.gh-proxy.com/',
+  'https://j.1lin.dpdns.org/',
+  'https://github.starrlzy.cn/',
+  'https://github-proxy.memory-echoes.cn/',
+  'https://gh.927223.xyz/',
+  'https://gh.bugdey.us.kg/',
+  'https://j.1win.ggff.net/',
+  'https://gitproxy.127731.xyz/',
+  'https://gh.b52m.cn/',
+  'https://down.mxw.qzz.io/',
+  'https://slink.ltd/',
+  'https://github.tmby.shop/',
+  'https://ghpr.cc/',
+  'https://gh.tryxd.cn/',
+  'https://gitproxy.click/',
+  'https://github.chenc.dev/',
+  'https://gh.jasonzeng.dev/',
+  'https://gp.zkitefly.eu.org/',
+  'https://ghproxy.1888866.xyz/',
+  'https://ghp.arslantu.xyz/',
+  'https://free.cn.eu.org/',
+  'https://ghp.keleyaa.com/',
+  'https://proxy.yaoyaoling.net/',
+  'https://g.z321.cc.cd/',
+  'https://gap.andyjin.website/',
+  'https://gh.ruan.dpdns.org/',
+  'https://github.nswrz.cn/',
+  'https://gh.zhai.edu.pl/',
+  'https://github-cf.947563.xyz/',
+  'https://github.gohj99.site/',
+  'https://githubproxy.gohj99.site/'
 ]
-const GITHUB_RELEASE_PROXIES = [
-  'https://gh.llkk.cc/https://github.com',
-  'https://gh-proxy.com/https://github.com',
-  'https://ghfast.top/https://github.com'
-]
+const GITHUB_API_PROBE_LIMIT = 12
+const GITHUB_DOWNLOAD_PROBE_LIMIT = 56
+const GITHUB_DOWNLOAD_PROBE_CONCURRENCY = 10
 const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
 const MIRROR_LINK_PROBE_TIMEOUT_MS = 6000
@@ -137,14 +213,32 @@ async function probeReleaseUrl(
 
 async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: number): Promise<ReleaseDownloadRoute[]> {
   const urls = [
-    ...GITHUB_RELEASE_PROXIES.map((prefix) => `${prefix}/${assetPath}`),
+    ...GITHUB_ACCEL_PREFIXES.slice(0, GITHUB_DOWNLOAD_PROBE_LIMIT).map((prefix) => `${prefix}${assetPath}`),
     `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
   ]
-  const probes = await Promise.allSettled(urls.map((url, index) => probeReleaseUrl(
-    url,
-    index === urls.length - 1 ? ORIGINAL_LINK_PROBE_TIMEOUT_MS : MIRROR_LINK_PROBE_TIMEOUT_MS,
-    expectedSize
-  )))
+  const probes: PromiseSettledResult<ReleaseDownloadRoute>[] = new Array(urls.length)
+  let cursor = 0
+  const worker = async (): Promise<void> => {
+    while (cursor < urls.length) {
+      const index = cursor++
+      try {
+        probes[index] = {
+          status: 'fulfilled',
+          value: await probeReleaseUrl(
+            urls[index],
+            index === urls.length - 1 ? ORIGINAL_LINK_PROBE_TIMEOUT_MS : MIRROR_LINK_PROBE_TIMEOUT_MS,
+            expectedSize
+          )
+        }
+      } catch (reason) {
+        probes[index] = { status: 'rejected', reason }
+      }
+    }
+  }
+  await Promise.all(Array.from(
+    { length: Math.min(GITHUB_DOWNLOAD_PROBE_CONCURRENCY, urls.length) },
+    () => worker()
+  ))
   const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
     .sort((left, right) => right.bytesPerSecond - left.bytesPerSecond)
   const failed = probes.flatMap((result, index) => result.status === 'rejected'
@@ -291,24 +385,33 @@ async function downloadRangedAsset(
 }
 
 async function getLatestRelease(): Promise<{ currentVersion: string; latestVersion: string; notes: string; assetName: string; assetSize: number; digest: string }> {
+  const urls = [
+    ...GITHUB_ACCEL_PREFIXES.slice(0, GITHUB_API_PROBE_LIMIT).map((prefix) => `${prefix}https://api.github.com/repos/${REPOSITORY}/releases/latest`),
+    `https://api.github.com/repos/${REPOSITORY}/releases/latest`
+  ]
+  const controllers = urls.map(() => new AbortController())
   let release: GitHubRelease | undefined
   let lastError: Error | undefined
-  for (const prefix of GITHUB_API_PROXIES) {
-    try {
-      const response = await networkFetch(`${prefix}/repos/${REPOSITORY}/releases/latest`, {
+  try {
+    release = await Promise.any(urls.map(async (url, index) => {
+      const response = await networkFetch(url, {
         headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
-        signal: AbortSignal.timeout(12_000)
+        signal: AbortSignal.any([controllers[index].signal, AbortSignal.timeout(12_000)])
       })
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined)
-        lastError = new Error(`GitHub 返回 HTTP ${response.status}`)
-        continue
+        throw new Error(`GitHub 返回 HTTP ${response.status}`)
       }
-      release = await response.json() as GitHubRelease
-      break
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error))
-    }
+      const result = await response.json() as GitHubRelease
+      if (typeof result.tag_name !== 'string') throw new Error('GitHub Release 响应缺少版本标签')
+      return result
+    }))
+  } catch (error) {
+    lastError = error instanceof AggregateError
+      ? new Error(error.errors.map((entry) => entry instanceof Error ? entry.message : String(entry)).join('；'))
+      : error instanceof Error ? error : new Error(String(error))
+  } finally {
+    for (const controller of controllers) controller.abort()
   }
   if (!release) throw new Error(`检查更新失败：${lastError?.message ?? '所有 GitHub API 加速地址均失败'}`)
   const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
