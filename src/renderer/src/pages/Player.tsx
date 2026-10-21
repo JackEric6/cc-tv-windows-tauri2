@@ -31,7 +31,7 @@ const PREVIEW_SCAN_START_DELAY_MS = 30_000
 const PREVIEW_FRAME_CACHE_LIMIT = 20_000
 const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
-const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 24
+const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 48
 const KEYBOARD_SEEK_UPDATE_INTERVAL_MS = 33
 const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
@@ -1131,7 +1131,6 @@ export function Player({
       setKeyboardSeeking(true)
       setPlaybackPosition(current)
       setPlayerControlsVisible(true)
-      scheduleInlineControlsHide(INLINE_CONTROL_IDLE_MS)
       keyboardSeekAnimationTimerRef.current = window.setInterval(() => {
         if (!activePlayer || activePlayer.isDisposed()) return
         const duration = Number(activePlayer.duration())
