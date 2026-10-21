@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: ''
+      app_version:
+        description: '构建版本号；留空时使用分支内版本'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -31,6 +36,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set requested app version
+        if: github.event_name == 'workflow_dispatch' && inputs.app_version != ''
+        shell: pwsh
+        run: |
+          $appVersion = '${{ inputs.app_version }}'.Trim()
+          if ($appVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid app version: $appVersion" }
+
+          npm version $appVersion --no-git-tag-version
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to set npm package version' }
+
+          $cargoPath = 'src-tauri/Cargo.toml'
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = [regex]::Replace($cargo, '(?m)^(version\s*=\s*")\d+\.\d+\.\d+("\s*)$', "`${1}$appVersion`${2}", 1)
+          Set-Content -Path $cargoPath -Value $cargo -NoNewline
+
+          $tauriPath = 'src-tauri/tauri.conf.json'
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = $appVersion
+          $tauri | ConvertTo-Json -Depth 100 | Set-Content -Path $tauriPath -Encoding utf8
 
       - uses: actions/setup-node@v4
         with:
