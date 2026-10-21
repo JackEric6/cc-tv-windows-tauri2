@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { VodCard } from '@/components/VodCard'
 import { Icon } from '@/components/icons'
 import { mergeResults, useApp } from '@/store/useApp'
-import { collectAdultTitleKeys, matchesAdultContent, normalizeName, posterMatchKeys } from '@/utils/normalize'
+import { normalizeName, posterMatchKeys } from '@/utils/normalize'
 import { clearSearchHistory, getSearchHistory, rememberSearch, subscribeSearchHistory } from '@/utils/searchHistory'
 import { androidSearchPriority } from '@shared/searchSourcePolicy'
 import type { CategoryBucket } from '@shared/types'
@@ -25,14 +25,12 @@ export function Search(): JSX.Element {
   const browseMore = useApp((s) => s.browseMore)
   const clearBrowse = useApp((s) => s.clearBrowse)
   const filterCommentary = useApp((s) => s.settings?.filterCommentary ?? false)
-  const filterAdult = useApp((s) => s.sessionFilterAdult ?? s.settings?.filterAdult ?? true)
   const updateSettings = useApp((s) => s.updateSettings)
 
   const wdParam = params.get('wd') ?? ''
   const categorySources = useMemo(() => sites.filter((site) => site.enabled && !site.unsupported), [sites])
   const searchableSources = useMemo(() => categorySources.filter((site) => site.searchable), [categorySources])
   const usable = wdParam ? searchableSources : categorySources
-  const [siteFilter, setSiteFilter] = useState<string | null>(null)
   const [searchHistory, setSearchHistory] = useState<string[]>(getSearchHistory)
   /** 已经发起过的关键词，避免 URL 变化重复触发 */
   const lastRun = useRef('')
@@ -45,11 +43,9 @@ export function Search(): JSX.Element {
     if (lastRun.current === wdParam) return
     if (search.wd === wdParam && (search.running || search.results.length > 0)) {
       lastRun.current = wdParam
-      setSiteFilter(null)
       return
     }
     lastRun.current = wdParam
-    setSiteFilter(null)
     void runSearch(wdParam)
   }, [wdParam, usable.length, runSearch, search.wd, search.running, search.results.length])
 
@@ -74,7 +70,6 @@ export function Search(): JSX.Element {
     if (wdParam || !previous) return
     lastRun.current = ''
     clearSearch()
-    setSiteFilter(null)
   }, [wdParam, clearSearch])
 
   const isBrowsing = !wdParam
@@ -84,14 +79,9 @@ export function Search(): JSX.Element {
   const orderedSource = useMemo(() => [...source].sort((a, b) =>
     androidSearchPriority(a.siteKey, a.siteName) - androidSearchPriority(b.siteKey, b.siteName)
   ), [source])
-  const adultTitleKeys = useMemo(() => collectAdultTitleKeys(orderedSource), [orderedSource])
-  const filteredSource = useMemo(() => orderedSource.map((result) => ({
-    ...result,
-    list: result.list.filter((vod) => !filterAdult || !matchesAdultContent(vod.vod_name, vod.type_name, adultTitleKeys, wdParam))
-  })), [orderedSource, filterAdult, adultTitleKeys, wdParam])
   const sourceWithPosterFallback = useMemo(() => {
     const posters = new Map<string, string[]>()
-    for (const result of filteredSource) {
+    for (const result of orderedSource) {
       for (const vod of result.list) {
         if (!vod.vod_pic) continue
         for (const key of posterMatchKeys(vod.vod_name)) {
@@ -101,7 +91,7 @@ export function Search(): JSX.Element {
         }
       }
     }
-    return filteredSource.map((result) => ({
+    return orderedSource.map((result) => ({
       ...result,
       list: result.list.map((vod) => {
         const candidates = [...new Set(posterMatchKeys(vod.vod_name).flatMap((key) => posters.get(key) ?? []))]
@@ -113,7 +103,7 @@ export function Search(): JSX.Element {
         }
       })
     }))
-  }, [filteredSource])
+  }, [orderedSource])
 
   // 分类浏览翻页时把「已经上屏的顺序」交给合并函数，否则新一页里和前面同名的条目
   // 会让那一组多出一个源、按源数排序时整块跳到最前面，看起来就是「一翻页全部刷新」。
@@ -135,10 +125,9 @@ export function Search(): JSX.Element {
       mergeResults(sourceWithPosterFallback, {
         keyword: isBrowsing ? '' : search.wd,
         filterCommentary,
-        filterAdult,
         previousOrder
       }),
-    [sourceWithPosterFallback, isBrowsing, search.wd, filterCommentary, filterAdult, previousOrder]
+    [sourceWithPosterFallback, isBrowsing, search.wd, filterCommentary, previousOrder]
   )
 
   // 维护名次表。第一页（或换分类）时整个重建 —— 那一轮的排序就是标准排序，拿它当基准；
@@ -161,14 +150,10 @@ export function Search(): JSX.Element {
 
   const displayResults = isBrowsing
     ? merged
-    : filterAdult && searchPending
-      ? []
-      : sourceWithPosterFallback.flatMap((result) => result.list)
-  const visible = siteFilter ? displayResults.filter((v) => v.siteKey === siteFilter) : displayResults
+    : sourceWithPosterFallback.flatMap((result) => result.list)
+  const visible = displayResults
 
-  const okSites = sourceWithPosterFallback.filter((r) => r.ok)
   const failedSites = source.filter((r) => !r.ok)
-  const hitCount = okSites.reduce((sum, r) => sum + r.list.length, 0)
 
   function clearResults(): void {
     lastRun.current = ''
@@ -223,11 +208,7 @@ export function Search(): JSX.Element {
         <div>
           <div className="page-title">{translate(isBrowsing ? '分类浏览' : '聚合搜索')}</div>
           <div className="page-sub">
-            {isBrowsing ? <BrowseSub /> : (
-              `「${search.wd}」· ${okSites.length}/${progressTotal} ${translate('个站点有响应')} · ${translate('命中')} ${hitCount}${translate('条')}${
-                hidden ? ` · ${translate('已挡掉')} ${hidden} ${translate('条解说')}` : ''
-              }`
-            )}
+            {isBrowsing ? <BrowseSub /> : `「${search.wd}」`}
           </div>
         </div>
         <div className="page-actions">
@@ -309,30 +290,6 @@ export function Search(): JSX.Element {
 
       {usable.length && isBrowsing && browse.bucket ? <SubBar /> : null}
 
-      {usable.length && !isBrowsing ? (
-        <div className="chips" style={{ marginBottom: 14 }}>
-          <button
-            type="button"
-            className={`chip ${siteFilter === null ? 'active' : ''}`}
-            onClick={() => setSiteFilter(null)}
-          >{translate("\n            全部站点\n            ")}<span className="chip-count">{merged.length}</span>
-          </button>
-          {sourceWithPosterFallback.map((r) => (
-            <button
-              key={r.siteKey}
-              type="button"
-              className={`chip ${siteFilter === r.siteKey ? 'active' : ''}`}
-              onClick={() => setSiteFilter(siteFilter === r.siteKey ? null : r.siteKey)}
-              title={r.ok ? `${translate('用时 ')}${r.ms}ms` : r.message}
-            >
-              <span className={`dot ${r.ok && r.list.length ? 'ok' : r.ok ? '' : 'bad'}`} />
-              {r.siteName}
-              <span className="chip-count">{r.list.length}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       {usable.length && (busy || source.length) ? (
         visible.length ? (
           <div className="poster-grid">
@@ -347,9 +304,7 @@ export function Search(): JSX.Element {
               busy
                 ? isBrowsing
                   ? translate('还有站点在返回数据，结果会陆续出现。')
-                  : filterAdult
-                    ? translate('正在汇总各站的分类标签，完成后统一显示结果。')
-                    : translate('还有站点在返回数据，结果会陆续出现。')
+                  : translate('还有站点在返回数据，结果会陆续出现。')
                 : isBrowsing
                   ? translate('换个分类试试，或者到「影视源」页测试站点是否可用。')
                   : translate('换个关键词试试，或者检查站点是否可用。')

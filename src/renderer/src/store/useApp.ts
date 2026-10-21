@@ -15,7 +15,7 @@ import type {
   Vod,
   VodDetail
 } from '@shared/types'
-import { isAdultContent, isCommentary, normalizeName, posterMatchKeys, scoreCandidate } from '@/utils/normalize'
+import { isCommentary, normalizeName, posterMatchKeys, scoreCandidate } from '@/utils/normalize'
 import { androidSearchPriority } from '@shared/searchSourcePolicy'
 
 export interface Toast {
@@ -259,7 +259,6 @@ export function mergeResults(
   options: {
     keyword?: string
     filterCommentary?: boolean
-    filterAdult?: boolean
     /**
      * 上一轮已经上屏的顺序（归一化片名 → 名次），只有分类浏览翻页时会传。
      * 传了就把老卡片原样排在前面、新一页的追在后面。
@@ -267,7 +266,7 @@ export function mergeResults(
     previousOrder?: Map<string, number>
   } = {}
 ): { merged: MergedVod[]; hidden: number } {
-  const { keyword = '', filterCommentary = false, filterAdult = true } = options
+  const { keyword = '', filterCommentary = false } = options
   const groups = new Map<string, Vod[]>()
   let hidden = 0
 
@@ -276,10 +275,6 @@ export function mergeResults(
       const name = (vod.vod_name ?? '').trim()
       if (!name) continue
       if (filterCommentary && isCommentary(name, vod.type_name)) {
-        hidden++
-        continue
-      }
-      if (filterAdult && isAdultContent(name, vod.type_name)) {
         hidden++
         continue
       }
@@ -403,8 +398,6 @@ interface AppState {
   ready: boolean
   info: AppInfo | null
   settings: AppSettings | null
-  /** 成人内容过滤的临时会话覆盖；不写入设置文件，重启后恢复默认设置。 */
-  sessionFilterAdult: boolean | null
   sources: ConfigSource[]
   sites: Site[]
   /** 正在同步中的配置源 id */
@@ -440,7 +433,6 @@ interface AppState {
   syncAll: () => Promise<void>
   addPreset: (id: string) => Promise<void>
   updateSettings: (patch: Partial<AppSettings>) => Promise<void>
-  setSessionFilterAdult: (enabled: boolean | null) => void
   setSiteEnabled: (key: string, enabled: boolean) => Promise<void>
   setSiteAreaEnabled: (key: string, area: 'home' | 'search' | 'category', enabled: boolean) => Promise<void>
   setSitesEnabled: (keys: string[], enabled: boolean) => Promise<void>
@@ -472,7 +464,6 @@ export const useApp = create<AppState>((set, get) => ({
   ready: false,
   info: null,
   settings: null,
-  sessionFilterAdult: null,
   sources: [],
   sites: [],
   syncing: {},
@@ -589,10 +580,6 @@ export const useApp = create<AppState>((set, get) => ({
     if (patch.homeSourceKey && patch.homeSourceKey !== previousHomeSource) {
       await get().loadHome(true)
     }
-  },
-
-  setSessionFilterAdult(enabled) {
-    set({ sessionFilterAdult: enabled })
   },
 
   async setSiteEnabled(key, enabled) {

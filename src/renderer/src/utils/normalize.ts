@@ -94,44 +94,6 @@ export function isCommentary(name: string, typeName?: string): boolean {
   return COMMENTARY_RE.test(name ?? '') || COMMENTARY_RE.test(typeName ?? '')
 }
 
-/** 成人内容常以片名或资源站分类标签标注；暴风用「理论片」标记伦理片。 */
-const ADULT_CONTENT_RE = /(伦理片|理论片|伦理|情色|成人|限制级|18\s*\+)/i
-
-export function isAdultContent(name: string, typeName?: string): boolean {
-  return ADULT_CONTENT_RE.test(`${name ?? ''} ${typeName ?? ''}`)
-}
-
-/** 收集本轮所有源明确标记为成人内容的作品名，用于跨源过滤同一搜索结果。 */
-export function collectAdultTitleKeys(
-  results: ReadonlyArray<{ list: ReadonlyArray<{ vod_name: string; type_name?: string }> }>
-): Set<string> {
-  const keys = new Set<string>()
-  for (const result of results) {
-    for (const vod of result.list) {
-      if (!isAdultContent(vod.vod_name, vod.type_name)) continue
-      for (const key of posterMatchKeys(vod.vod_name)) keys.add(key)
-    }
-  }
-  return keys
-}
-
-/** 兼容不同站点同名条目及按伦理片关键字返回的片名变体。 */
-export function matchesAdultContent(
-  name: string,
-  typeName: string | undefined,
-  adultTitleKeys: ReadonlySet<string>,
-  keyword = ''
-): boolean {
-  if (isAdultContent(name, typeName)) return true
-  const keys = posterMatchKeys(name)
-  if (keys.some((key) => adultTitleKeys.has(key))) return true
-
-  const queryKey = normalizeName(keyword)
-  if (queryKey.length < 2 || !keys.length) return false
-  const queryIsAdult = [...adultTitleKeys].some((key) => key.includes(queryKey) || queryKey.includes(key))
-  return queryIsAdult && keys.some((key) => key.includes(queryKey) || queryKey.includes(key))
-}
-
 /**
  * 把同名影片的候选按「信息量」排序，用来挑代表条目。
  * 有海报、有备注、有评分的排前面——这样合并后的卡片看起来最完整。

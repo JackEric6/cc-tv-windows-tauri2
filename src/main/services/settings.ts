@@ -6,7 +6,7 @@ const NAME = 'settings'
 const HOME_SOURCE_KEYS = new Set(['guazi', 'xgzy', 'dyttzy', 'ffzy', 'lzi', 'bfzy'])
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  settingsVersion: 5,
+  settingsVersion: 6,
   concurrency: 10,
   language: 'zh-CN',
   timeout: 3,
@@ -19,7 +19,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebarCollapsed: false,
   homeSourceKey: 'guazi',
   filterCommentary: false,
-  filterAdult: true,
   m3u8Purify: true,
   danmakuEnabled: true,
   fullscreenSystemTimeEnabled: true,
@@ -38,20 +37,21 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 export async function getSettings(): Promise<AppSettings> {
-  const stored = await readStore<Partial<AppSettings>>(NAME, {})
+  const stored = await readStore<Partial<AppSettings> & { filterAdult?: boolean }>(NAME, {})
+  const { filterAdult: legacyFilterAdult, ...storedSettings } = stored
   const storedHomeSourceKey = String(stored.homeSourceKey ?? '')
   const homeSourceKey = HOME_SOURCE_KEYS.has(storedHomeSourceKey)
     ? storedHomeSourceKey as AppSettings['homeSourceKey']
     : DEFAULT_SETTINGS.homeSourceKey
   const needsHomeSourceMigration = stored.homeSourceKey !== undefined && storedHomeSourceKey !== homeSourceKey
   const storedVersion = stored.settingsVersion ?? 0
-  const needsMigration = storedVersion < 5
+  const needsMigration = storedVersion < 6
   const storedConcurrency = Number(stored.concurrency)
   const storedTimeout = Number(stored.timeout)
   const settings: AppSettings = {
     ...DEFAULT_SETTINGS,
-    ...stored,
-    settingsVersion: 5,
+    ...storedSettings,
+    settingsVersion: 6,
     homeSourceKey,
     concurrency: storedVersion < 3 && stored.concurrency === 8
       ? 10
@@ -68,17 +68,16 @@ export async function getSettings(): Promise<AppSettings> {
       ? Math.max(1, Math.min(10, Math.trunc(stored.singleSourceTimeoutSeconds ?? DEFAULT_SETTINGS.singleSourceTimeoutSeconds)))
       : DEFAULT_SETTINGS.singleSourceTimeoutSeconds,
     filterCommentary: stored.filterCommentary ?? DEFAULT_SETTINGS.filterCommentary,
-    filterAdult: true,
     externalPlayer: { ...DEFAULT_SETTINGS.externalPlayer, ...(stored.externalPlayer ?? {}) },
     window: { ...DEFAULT_SETTINGS.window, ...(stored.window ?? {}) },
     ai: { ...DEFAULT_SETTINGS.ai, ...(stored.ai ?? {}) }
   }
-  if (needsMigration || needsHomeSourceMigration || stored.filterAdult !== true) writeStore(NAME, settings)
+  if (needsMigration || needsHomeSourceMigration || legacyFilterAdult !== undefined) writeStore(NAME, settings)
   return settings
 }
 
 export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-  const next = { ...(await getSettings()), ...patch, filterAdult: true }
+  const next = { ...(await getSettings()), ...patch }
   writeStore(NAME, next)
   return next
 }

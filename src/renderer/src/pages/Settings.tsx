@@ -22,7 +22,6 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   const syncSource = useApp((s) => s.syncSource)
   const refreshAll = useApp((s) => s.refreshAll)
   const updateSettings = useApp((s) => s.updateSettings)
-  const setSessionFilterAdult = useApp((s) => s.setSessionFilterAdult)
   const notify = useApp((s) => s.notify)
   const presets = useApp((s) => s.presets)
   const addPreset = useApp((s) => s.addPreset)
@@ -77,12 +76,6 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   async function submitFeedback(): Promise<void> {
     const content = feedback.trim()
     if (!content || feedbackSending) return
-    if (content === '4848') {
-      setSessionFilterAdult(false)
-      setFeedback('')
-      setFeedbackMessage(translate('18+ 内容过滤已关闭，退出软件后将恢复开启'))
-      return
-    }
     const sourceKey = ({ '7701': 'guazi', '8801': 'xgzy' } as Record<string, string>)[content]
     if (sourceKey) {
       const source = sites.find((item) => item.key === sourceKey && item.enabled && item.homeEnabled && !item.unsupported)

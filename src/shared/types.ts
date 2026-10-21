@@ -299,8 +299,6 @@ export interface AppSettings {
   homeSourceKey: 'guazi' | 'xgzy' | 'dyttzy' | 'ffzy' | 'lzi' | 'bfzy'
   /** 搜索结果里隐藏「解说 / 速看 / 混剪」这类二创内容 */
   filterCommentary: boolean
-  /** 搜索与分类结果中过滤成人及伦理片内容 */
-  filterAdult: boolean
   /** 播放 HLS 时清除明显广告片段与异常片段组 */
   m3u8Purify: boolean
   /** 自动匹配并显示在线弹幕 */
