@@ -102,7 +102,6 @@ const GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES = 512 * 1024
 const GITHUB_DOWNLOAD_FINAL_WINDOW_MS = 1200
 const GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES = 64 * 1024
 const GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND = 1 * 1024 * 1024
-const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
 const GITHUB_API_REQUEST_TIMEOUT_MS = 5000
 const DOWNLOAD_RANGE_CHUNK_BYTES = 1024 * 1024
@@ -115,7 +114,7 @@ const MAX_INSTALLER_BYTES = 120 * 1024 * 1024
 interface GitHubRelease {
   tag_name?: unknown
   body?: unknown
-  assets?: Array<{ name?: unknown; size?: unknown; digest?: unknown; content_type?: unknown }>
+  assets?: Array<{ name?: unknown; size?: unknown; digest?: unknown; content_type?: unknown; browser_download_url?: unknown }>
 }
 
 interface LatestReleaseInfo {
@@ -124,6 +123,7 @@ interface LatestReleaseInfo {
   notes: string
   assetName: string
   assetSize: number
+  downloadUrl: string
   digest: string
 }
 
@@ -235,10 +235,10 @@ async function probeReleaseUrl(
   return { url, bytesPerSecond: received * 1000 / elapsedAfterFirstByte, rangeSupported, sampleBytes: received }
 }
 
-async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: number): Promise<ReleaseDownloadRoute[]> {
+async function fastestReleaseDownloadRoutes(originalUrl: string, expectedSize: number): Promise<ReleaseDownloadRoute[]> {
   const routes = [
-    ...GITHUB_ACCEL_PREFIXES.map((prefix) => `${prefix}${assetPath}`),
-    `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
+    ...GITHUB_ACCEL_PREFIXES.map((prefix) => `${prefix}${originalUrl}`),
+    originalUrl
   ]
   const testedRoutes = [
     routes[routes.length - 1],
@@ -528,6 +528,16 @@ async function getLatestRelease(): Promise<LatestReleaseInfo> {
   if (!asset || typeof asset.size !== 'number' || asset.size < 1_000_000 || asset.size > MAX_INSTALLER_BYTES) {
     throw new Error('最新 Release 中没有有效的 Windows 安装包')
   }
+  const downloadUrl = typeof asset.browser_download_url === 'string' ? asset.browser_download_url : ''
+  let parsedDownloadUrl: URL
+  try {
+    parsedDownloadUrl = new URL(downloadUrl)
+  } catch {
+    throw new Error('GitHub Release 安装包地址无效')
+  }
+  if (parsedDownloadUrl.protocol !== 'https:' || parsedDownloadUrl.hostname !== 'github.com') {
+    throw new Error('GitHub Release 安装包地址主机无效')
+  }
   if (typeof asset.digest !== 'string' || !/^sha256:[a-f\d]{64}$/i.test(asset.digest)) {
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
@@ -537,6 +547,7 @@ async function getLatestRelease(): Promise<LatestReleaseInfo> {
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName,
     assetSize: asset.size,
+    downloadUrl,
     digest: asset.digest.slice('sha256:'.length).toLowerCase()
   }
   cachedLatestRelease = result
@@ -561,8 +572,7 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   }
   const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
   const outputPath = join(tmpdir(), filename)
-  const assetPath = `${REPOSITORY}/releases/download/${release.latestVersion}/${release.assetName}`
-  const downloadRoutes = await fastestReleaseDownloadRoutes(assetPath, release.assetSize)
+  const downloadRoutes = await fastestReleaseDownloadRoutes(release.downloadUrl, release.assetSize)
   let lastError: Error | undefined
   for (const route of downloadRoutes) {
     try {
