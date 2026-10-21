@@ -293,11 +293,9 @@ export function OfflinePlayer(): JSX.Element {
                 <button type="button" className="fullscreen-control fullscreen-icon-control" onClick={togglePlayback} title={translate(isPlaying ? '暂停' : '播放')} aria-label={translate(isPlaying ? '暂停' : '播放')}>
                   <Icon name={isPlaying ? 'pause' : 'play'} size={16} />
                 </button>
-                {settings?.fullscreenPlaybackTimeEnabled !== false ? (
-                  <time className="fullscreen-control fullscreen-playback-time">
-                    {formatClock(position)} / {duration > 0 ? formatClock(duration) : '--:--'}
-                  </time>
-                ) : null}
+                <time className="fullscreen-control fullscreen-playback-time">
+                  {formatClock(position)} / {duration > 0 ? formatClock(duration) : '--:--'}
+                </time>
                 <button type="button" className="fullscreen-control" onClick={() => setDanmakuVisible((value) => !value)}>
                   {translate(danmakuVisible ? '关闭弹幕' : '开启弹幕')}{task?.danmakuCount ? ` · ${task.danmakuCount}` : ''}
                 </button>
