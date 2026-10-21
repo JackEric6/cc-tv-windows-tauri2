@@ -101,6 +101,7 @@ const GITHUB_DOWNLOAD_FINALIST_COUNT = 3
 const GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES = 1536 * 1024
 const GITHUB_DOWNLOAD_FINAL_WINDOW_MS = 3000
 const GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES = 64 * 1024
+const GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND = 2 * 1024 * 1024
 const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
 const DOWNLOAD_RANGE_CHUNK_BYTES = 1024 * 1024
@@ -226,26 +227,37 @@ async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: num
     `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
   ]
   const testedRoutes = [
-    ...routes.slice(0, GITHUB_DOWNLOAD_PROBE_LIMIT),
-    routes[routes.length - 1]
+    routes[routes.length - 1],
+    ...routes.slice(0, GITHUB_DOWNLOAD_PROBE_LIMIT)
   ]
-  const probeBatch = async (urls: string[], bytes: number, windowMs: number): Promise<ReleaseDownloadRoute[]> => {
+  const probeBatch = async (
+    urls: string[],
+    bytes: number,
+    windowMs: number
+  ): Promise<{ samples: ReleaseDownloadRoute[]; fastRoute?: ReleaseDownloadRoute }> => {
     const controller = new AbortController()
     const samples: Array<ReleaseDownloadRoute | undefined> = new Array(urls.length)
+    let fastRoute: ReleaseDownloadRoute | undefined
     let cursor = 0
     const worker = async (): Promise<void> => {
       while (cursor < urls.length && !controller.signal.aborted) {
         const index = cursor++
         try {
-          samples[index] = await probeReleaseUrl(
+          const sample = await probeReleaseUrl(
             urls[index],
-            index === urls.length - 1 && urls[index] === routes[routes.length - 1]
+            urls[index] === routes[routes.length - 1]
               ? ORIGINAL_LINK_PROBE_TIMEOUT_MS
               : windowMs + 300,
             expectedSize,
             bytes,
             controller.signal
           )
+          samples[index] = sample
+          if (sample.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES &&
+            sample.bytesPerSecond >= GITHUB_DOWNLOAD_FAST_START_BYTES_PER_SECOND) {
+            fastRoute = sample
+            controller.abort(new Error('已找到超过 2 MB/s 的下载线路'))
+          }
         } catch {
           samples[index] = undefined
         }
@@ -266,10 +278,23 @@ async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: num
     ])
     if (timeout) clearTimeout(timeout)
     controller.abort()
-    return samples.flatMap((sample) => sample ? [sample] : [])
+    return { samples: samples.flatMap((sample) => sample ? [sample] : []), fastRoute }
   }
 
-  const small = await probeBatch(testedRoutes, GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES, GITHUB_DOWNLOAD_PROBE_WINDOW_MS)
+  const smallBatch = await probeBatch(testedRoutes, GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES, GITHUB_DOWNLOAD_PROBE_WINDOW_MS)
+  if (smallBatch.fastRoute) {
+    const route = smallBatch.fastRoute
+    return [
+      route,
+      ...routes.filter((url) => url !== route.url).map((url) => ({
+        url,
+        bytesPerSecond: 0,
+        rangeSupported: false,
+        sampleBytes: 0
+      }))
+    ]
+  }
+  const small = smallBatch.samples
   const alive = small
     .filter((route) => route.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES)
     .sort((left, right) => right.bytesPerSecond - left.bytesPerSecond)
@@ -278,11 +303,24 @@ async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: num
   }
 
   const finalists = alive.slice(0, GITHUB_DOWNLOAD_FINALIST_COUNT)
-  const finalSamples = await probeBatch(
+  const finalBatch = await probeBatch(
     finalists.map((route) => route.url),
     GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES,
     GITHUB_DOWNLOAD_FINAL_WINDOW_MS
   )
+  if (finalBatch.fastRoute) {
+    const route = finalBatch.fastRoute
+    return [
+      route,
+      ...routes.filter((url) => url !== route.url).map((url) => ({
+        url,
+        bytesPerSecond: 0,
+        rangeSupported: false,
+        sampleBytes: 0
+      }))
+    ]
+  }
+  const finalSamples = finalBatch.samples
   const finalAlive = finalSamples.filter((route) => route.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES)
     .sort((left, right) => right.bytesPerSecond - left.bytesPerSecond)
   const rankedTested = [
