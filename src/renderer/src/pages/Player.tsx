@@ -51,11 +51,6 @@ function getKeyboardSeekTarget(start: number, direction: number, elapsedMs: numb
   return Math.max(0, Math.min(limit, start + direction * distance))
 }
 
-function updateCurrentTimeLabel(player: VideoPlayer | null | undefined, seconds: number): void {
-  const label = player?.el()?.querySelector('.vjs-current-time-display')
-  if (label) label.textContent = formatClock(seconds)
-}
-
 function readSkipMarkers(): SavedSkipMarkers {
   try {
     const value = localStorage.getItem(PLAYER_SKIP_MARKERS_STORAGE_KEY)
@@ -201,7 +196,6 @@ export function Player({
   const pointerInsidePlayer = useRef(false)
   const heldSeekKeys = useRef(new Set<string>())
   const keyboardSeekTargetRef = useRef<number | null>(null)
-  const keyboardSeekTimerRef = useRef<number | undefined>(undefined)
   const keyboardSeekAnimationTimerRef = useRef<number | undefined>(undefined)
   const keyboardSeekStartedAtRef = useRef(0)
   const keyboardSeekStartPositionRef = useRef(0)
@@ -833,7 +827,6 @@ export function Player({
         const keyboardTarget = keyboardSeekTargetRef.current
         const current = keyboardTarget ?? (typeof position === 'number' && Number.isFinite(position) ? position : 0)
         setPlaybackPosition(current)
-        updateCurrentTimeLabel(player, current)
         setPlaybackDuration(typeof duration === 'number' && Number.isFinite(duration) ? duration : 0)
       }
       player.on('durationchange', updatePlaybackClock)
@@ -1112,20 +1105,6 @@ export function Player({
       if (!(target instanceof HTMLElement)) return false
       return target.isContentEditable || Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'))
     }
-    const scheduleKeyboardSeekSync = (delay = 300): void => {
-      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
-      keyboardSeekTimerRef.current = window.setTimeout(() => {
-        keyboardSeekTimerRef.current = undefined
-        keyboardSeekTargetRef.current = null
-        setKeyboardSeeking(false)
-        if (activePlayer && !activePlayer.isDisposed()) {
-          const position = Number(activePlayer.currentTime())
-          const current = Number.isFinite(position) ? position : 0
-          setPlaybackPosition(current)
-          updateCurrentTimeLabel(activePlayer, current)
-        }
-      }, delay)
-    }
     const commitKeyboardSeek = (): void => {
       const direction = keyboardSeekDirectionRef.current
       if (!direction || !activePlayer || activePlayer.isDisposed()) return
@@ -1139,13 +1118,11 @@ export function Player({
       const start = keyboardSeekStartPositionRef.current
       const target = getKeyboardSeekTarget(start, direction, elapsed, limit)
       keyboardSeekDirectionRef.current = 0
-      keyboardSeekTargetRef.current = target
       activePlayer.currentTime(target)
+      keyboardSeekTargetRef.current = null
       void Promise.resolve(activePlayer.play()).catch(() => undefined)
       setPlaybackPosition(target)
-      updateCurrentTimeLabel(activePlayer, target)
-      setKeyboardSeeking(true)
-      scheduleKeyboardSeekSync(15_000)
+      setKeyboardSeeking(false)
       scheduleInlineControlsHide(300)
       flashPlayerAction(`${direction < 0 ? '−' : '+'}${formatSeekDelta(Math.abs(target - start))}`)
     }
@@ -1167,11 +1144,8 @@ export function Player({
         )
         keyboardSeekTargetRef.current = target
         setPlaybackPosition(target)
-        updateCurrentTimeLabel(activePlayer, target)
         keyboardSeekDirectionRef.current = 0
       }
-      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
-      keyboardSeekTimerRef.current = undefined
       const current = keyboardSeekTargetRef.current ?? (Number(activePlayer?.currentTime()) || 0)
       keyboardSeekDirectionRef.current = direction
       keyboardSeekStartPositionRef.current = current
@@ -1180,7 +1154,6 @@ export function Player({
       heldSeekKeys.current.add(key)
       setKeyboardSeeking(true)
       setPlaybackPosition(current)
-      updateCurrentTimeLabel(activePlayer, current)
       if (activePlayer?.paused()) {
         void Promise.resolve(activePlayer.play()).catch(() => undefined)
       }
@@ -1203,7 +1176,6 @@ export function Player({
         )
         keyboardSeekTargetRef.current = target
         setPlaybackPosition(target)
-        updateCurrentTimeLabel(activePlayer, target)
       }, KEYBOARD_SEEK_UPDATE_INTERVAL_MS)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1243,16 +1215,6 @@ export function Player({
       commitKeyboardSeek()
       heldSeekKeys.current.clear()
     }
-    const onSeeked = (): void => {
-      if (keyboardSeekDirectionRef.current !== 0 || keyboardSeekTargetRef.current === null || !activePlayer || activePlayer.isDisposed()) return
-      const position = Number(activePlayer.currentTime())
-      if (!Number.isFinite(position) || Math.abs(position - keyboardSeekTargetRef.current) > 2) return
-      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
-      keyboardSeekTimerRef.current = undefined
-      keyboardSeekTargetRef.current = null
-      setKeyboardSeeking(false)
-      setPlaybackPosition(position)
-    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1269,13 +1231,10 @@ export function Player({
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
     window.addEventListener('blur', onBlur)
-    activePlayer?.on('seeked', onSeeked)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (keyboardSeekAnimationTimerRef.current !== undefined) window.clearInterval(keyboardSeekAnimationTimerRef.current)
-      if (keyboardSeekTimerRef.current !== undefined) window.clearTimeout(keyboardSeekTimerRef.current)
       keyboardSeekAnimationTimerRef.current = undefined
-      keyboardSeekTimerRef.current = undefined
       if (keyboardSeekDirectionRef.current !== 0 && activePlayer && !activePlayer.isDisposed()) {
         activePlayer.currentTime(keyboardSeekTargetRef.current ?? keyboardSeekStartPositionRef.current)
       }
@@ -1286,7 +1245,6 @@ export function Player({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
-      activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
   }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer, clearFullscreenTimer])
