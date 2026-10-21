@@ -1131,6 +1131,7 @@ export function Player({
       setKeyboardSeeking(true)
       setPlaybackPosition(current)
       setPlayerControlsVisible(true)
+      clearInlineControlsTimer()
       keyboardSeekAnimationTimerRef.current = window.setInterval(() => {
         if (!activePlayer || activePlayer.isDisposed()) return
         const duration = Number(activePlayer.duration())
@@ -1229,7 +1230,7 @@ export function Player({
       activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
-  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide])
+  }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer])
 
   const seekPreviewFrame = useCallback((seconds: number): void => {
     const previewPlayer = previewPlayerRef.current
