@@ -1834,7 +1834,7 @@
 
 .player-fullscreen-clock {
   color: rgba(245, 247, 250, .9);
-  font-size: 14px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
 }
@@ -1859,6 +1859,10 @@
 
 .player-fullscreen-playback-time {
   white-space: nowrap;
+}
+
+.player-fullscreen-fixed-info .fullscreen-playback-time {
+  font-size: 13px;
 }
 
 .player-fullscreen-bar {
