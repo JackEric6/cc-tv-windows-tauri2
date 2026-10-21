@@ -196,6 +196,7 @@ export function Player({
   const pointerInsidePlayer = useRef(false)
   const heldSeekKeys = useRef(new Set<string>())
   const keyboardSeekTargetRef = useRef<number | null>(null)
+  const keyboardSeekCommitTimerRef = useRef<number | undefined>(undefined)
   const keyboardSeekAnimationTimerRef = useRef<number | undefined>(undefined)
   const keyboardSeekStartedAtRef = useRef(0)
   const keyboardSeekStartPositionRef = useRef(0)
@@ -1119,14 +1120,29 @@ export function Player({
       const target = getKeyboardSeekTarget(start, direction, elapsed, limit)
       keyboardSeekDirectionRef.current = 0
       activePlayer.currentTime(target)
-      keyboardSeekTargetRef.current = null
+      keyboardSeekTargetRef.current = target
       void Promise.resolve(activePlayer.play()).catch(() => undefined)
       setPlaybackPosition(target)
-      setKeyboardSeeking(false)
-      scheduleInlineControlsHide(300)
+      setKeyboardSeeking(true)
+      clearInlineControlsTimer()
+      clearFullscreenTimer()
+      if (keyboardSeekCommitTimerRef.current !== undefined) window.clearTimeout(keyboardSeekCommitTimerRef.current)
+      keyboardSeekCommitTimerRef.current = window.setTimeout(() => {
+        keyboardSeekCommitTimerRef.current = undefined
+        if (keyboardSeekDirectionRef.current !== 0 || !activePlayer || activePlayer.isDisposed()) return
+        keyboardSeekTargetRef.current = null
+        setKeyboardSeeking(false)
+        const position = Number(activePlayer.currentTime())
+        if (Number.isFinite(position)) setPlaybackPosition(position)
+        scheduleInlineControlsHide(300)
+      }, 10_000)
       flashPlayerAction(`${direction < 0 ? '−' : '+'}${formatSeekDelta(Math.abs(target - start))}`)
     }
     const startKeyboardSeek = (direction: number, key: string): void => {
+      if (keyboardSeekCommitTimerRef.current !== undefined) {
+        window.clearTimeout(keyboardSeekCommitTimerRef.current)
+        keyboardSeekCommitTimerRef.current = undefined
+      }
       if (keyboardSeekDirectionRef.current !== 0) {
         if (keyboardSeekDirectionRef.current === direction) return
         if (keyboardSeekAnimationTimerRef.current !== undefined) {
@@ -1215,6 +1231,18 @@ export function Player({
       commitKeyboardSeek()
       heldSeekKeys.current.clear()
     }
+    const onSeeked = (): void => {
+      const target = keyboardSeekTargetRef.current
+      if (keyboardSeekDirectionRef.current !== 0 || target === null || !activePlayer || activePlayer.isDisposed()) return
+      const position = Number(activePlayer.currentTime())
+      if (!Number.isFinite(position) || Math.abs(position - target) > 2) return
+      if (keyboardSeekCommitTimerRef.current !== undefined) window.clearTimeout(keyboardSeekCommitTimerRef.current)
+      keyboardSeekCommitTimerRef.current = undefined
+      keyboardSeekTargetRef.current = null
+      setKeyboardSeeking(false)
+      setPlaybackPosition(position)
+      scheduleInlineControlsHide(300)
+    }
     const stage = stageRef.current
     const onWheel = (event: WheelEvent): void => {
       if (!visible || !pointerInsidePlayer.current || !activePlayer || activePlayer.isDisposed()) return
@@ -1231,10 +1259,13 @@ export function Player({
     window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('keyup', onKeyUp, true)
     window.addEventListener('blur', onBlur)
+    activePlayer?.on('seeked', onSeeked)
     stage?.addEventListener('wheel', onWheel, { passive: false })
     return () => {
       if (keyboardSeekAnimationTimerRef.current !== undefined) window.clearInterval(keyboardSeekAnimationTimerRef.current)
+      if (keyboardSeekCommitTimerRef.current !== undefined) window.clearTimeout(keyboardSeekCommitTimerRef.current)
       keyboardSeekAnimationTimerRef.current = undefined
+      keyboardSeekCommitTimerRef.current = undefined
       if (keyboardSeekDirectionRef.current !== 0 && activePlayer && !activePlayer.isDisposed()) {
         activePlayer.currentTime(keyboardSeekTargetRef.current ?? keyboardSeekStartPositionRef.current)
       }
@@ -1245,6 +1276,7 @@ export function Player({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('keyup', onKeyUp, true)
       window.removeEventListener('blur', onBlur)
+      activePlayer?.off('seeked', onSeeked)
       stage?.removeEventListener('wheel', onWheel)
     }
   }, [activePlayer, visible, showCachePicker, showDanmakuSettings, showPlayerSettings, showEpisodePicker, toggleFullscreen, togglePlayback, flashPlayerAction, scheduleInlineControlsHide, clearInlineControlsTimer, clearFullscreenTimer])
