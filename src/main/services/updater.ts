@@ -23,7 +23,7 @@ const GITHUB_ACCEL_PREFIXES = [
   'https://github.mxw.qzz.io/',
   'https://gh.ddlc.top/',
   'https://gh.chjina.com/',
-  'https://ghf.xn--eqrt2g.top/',
+  'https://ghf.xn--eqrr82bzpe.top/',
   'https://ghproxy.cxkpro.top/',
   'https://gh.idayer.com/',
   'https://githubdog.com/',
@@ -95,10 +95,14 @@ const GITHUB_ACCEL_PREFIXES = [
 const GITHUB_API_PROBE_LIMIT = 12
 const GITHUB_DOWNLOAD_PROBE_LIMIT = 56
 const GITHUB_DOWNLOAD_PROBE_CONCURRENCY = 10
+const GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES = 96 * 1024
+const GITHUB_DOWNLOAD_PROBE_WINDOW_MS = 2200
+const GITHUB_DOWNLOAD_FINALIST_COUNT = 3
+const GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES = 1536 * 1024
+const GITHUB_DOWNLOAD_FINAL_WINDOW_MS = 3000
+const GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES = 64 * 1024
 const GITHUB_RELEASE_ORIGIN = 'https://github.com'
 const ORIGINAL_LINK_PROBE_TIMEOUT_MS = 2000
-const MIRROR_LINK_PROBE_TIMEOUT_MS = 6000
-const DOWNLOAD_PROBE_BYTES = 64 * 1024
 const DOWNLOAD_RANGE_CHUNK_BYTES = 1024 * 1024
 const DOWNLOAD_RANGE_CONCURRENCY = 4
 const DOWNLOAD_RANGE_TIMEOUT_MS = 10 * 60_000
@@ -130,6 +134,7 @@ interface ReleaseDownloadRoute {
   url: string
   bytesPerSecond: number
   rangeSupported: boolean
+  sampleBytes: number
 }
 
 function createDownloadTimeout(parent?: AbortSignal): {
@@ -164,12 +169,14 @@ function createDownloadTimeout(parent?: AbortSignal): {
 async function probeReleaseUrl(
   url: string,
   timeoutMs: number,
-  expectedSize: number
+  expectedSize: number,
+  sampleBytes: number,
+  signal?: AbortSignal
 ): Promise<ReleaseDownloadRoute> {
   const started = performance.now()
   const response = await networkFetch(url, {
-    headers: { Range: `bytes=0-${DOWNLOAD_PROBE_BYTES - 1}`, 'Accept-Encoding': 'identity' },
-    signal: AbortSignal.timeout(timeoutMs)
+    headers: { Range: `bytes=0-${sampleBytes - 1}`, 'Accept-Encoding': 'identity' },
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs)
   })
   if (!response.ok || !response.body) {
     await response.body?.cancel().catch(() => undefined)
@@ -177,14 +184,14 @@ async function probeReleaseUrl(
   }
 
   const rangeSupported = response.status === 206
-  let sampleBytes = DOWNLOAD_PROBE_BYTES
+  let requestedBytes = sampleBytes
   if (rangeSupported) {
     const range = /^bytes\s+0-(\d+)\/(\d+)$/i.exec(response.headers.get('content-range') ?? '')
     if (!range || Number(range[2]) !== expectedSize) {
       await response.body.cancel().catch(() => undefined)
       throw new Error('Range 响应格式无效')
     }
-    sampleBytes = Math.min(sampleBytes, Number(range[1]) + 1)
+    requestedBytes = Math.min(requestedBytes, Number(range[1]) + 1)
   } else if (response.status !== 200) {
     await response.body.cancel().catch(() => undefined)
     throw new Error(`不支持的 HTTP 状态：${response.status}`)
@@ -197,55 +204,99 @@ async function probeReleaseUrl(
 
   const reader = response.body.getReader()
   let received = 0
+  let firstByteAt = 0
   try {
-    while (received < sampleBytes) {
+    while (received < requestedBytes) {
       const chunk = await reader.read()
       if (chunk.done) break
+      if (!firstByteAt) firstByteAt = performance.now()
       received += chunk.value?.byteLength ?? 0
     }
     if (received === 0) throw new Error('测速链路没有返回数据')
   } finally {
     await reader.cancel().catch(() => undefined)
   }
-  const elapsed = Math.max(1, performance.now() - started)
-  return { url, bytesPerSecond: received * 1000 / elapsed, rangeSupported }
+  const elapsedAfterFirstByte = Math.max(1, performance.now() - (firstByteAt || started))
+  return { url, bytesPerSecond: received * 1000 / elapsedAfterFirstByte, rangeSupported, sampleBytes: received }
 }
 
 async function fastestReleaseDownloadRoutes(assetPath: string, expectedSize: number): Promise<ReleaseDownloadRoute[]> {
-  const urls = [
-    ...GITHUB_ACCEL_PREFIXES.slice(0, GITHUB_DOWNLOAD_PROBE_LIMIT).map((prefix) => `${prefix}${assetPath}`),
+  const routes = [
+    ...GITHUB_ACCEL_PREFIXES.map((prefix) => `${prefix}${assetPath}`),
     `${GITHUB_RELEASE_ORIGIN}/${assetPath}`
   ]
-  const probes: PromiseSettledResult<ReleaseDownloadRoute>[] = new Array(urls.length)
-  let cursor = 0
-  const worker = async (): Promise<void> => {
-    while (cursor < urls.length) {
-      const index = cursor++
-      try {
-        probes[index] = {
-          status: 'fulfilled',
-          value: await probeReleaseUrl(
+  const testedRoutes = [
+    ...routes.slice(0, GITHUB_DOWNLOAD_PROBE_LIMIT),
+    routes[routes.length - 1]
+  ]
+  const probeBatch = async (urls: string[], bytes: number, windowMs: number): Promise<ReleaseDownloadRoute[]> => {
+    const controller = new AbortController()
+    const samples: Array<ReleaseDownloadRoute | undefined> = new Array(urls.length)
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < urls.length && !controller.signal.aborted) {
+        const index = cursor++
+        try {
+          samples[index] = await probeReleaseUrl(
             urls[index],
-            index === urls.length - 1 ? ORIGINAL_LINK_PROBE_TIMEOUT_MS : MIRROR_LINK_PROBE_TIMEOUT_MS,
-            expectedSize
+            index === urls.length - 1 && urls[index] === routes[routes.length - 1]
+              ? ORIGINAL_LINK_PROBE_TIMEOUT_MS
+              : windowMs + 300,
+            expectedSize,
+            bytes,
+            controller.signal
           )
+        } catch {
+          samples[index] = undefined
         }
-      } catch (reason) {
-        probes[index] = { status: 'rejected', reason }
       }
     }
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      Promise.all(Array.from(
+        { length: Math.min(GITHUB_DOWNLOAD_PROBE_CONCURRENCY, urls.length) },
+        () => worker()
+      )),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(() => {
+          controller.abort()
+          resolve()
+        }, windowMs + 800)
+      })
+    ])
+    if (timeout) clearTimeout(timeout)
+    controller.abort()
+    return samples.flatMap((sample) => sample ? [sample] : [])
   }
-  await Promise.all(Array.from(
-    { length: Math.min(GITHUB_DOWNLOAD_PROBE_CONCURRENCY, urls.length) },
-    () => worker()
-  ))
-  const successful = probes.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+
+  const small = await probeBatch(testedRoutes, GITHUB_DOWNLOAD_PROBE_SAMPLE_BYTES, GITHUB_DOWNLOAD_PROBE_WINDOW_MS)
+  const alive = small
+    .filter((route) => route.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES)
     .sort((left, right) => right.bytesPerSecond - left.bytesPerSecond)
-  const failed = probes.flatMap((result, index) => result.status === 'rejected'
-    ? [{ url: urls[index], bytesPerSecond: 0, rangeSupported: false }]
-    : [])
-  // A failed sample is not proof that the full GET is unusable; preserve every route for download fallback.
-  return [...successful, ...failed]
+  if (!alive.length) {
+    return routes.map((url) => ({ url, bytesPerSecond: 0, rangeSupported: false, sampleBytes: 0 }))
+  }
+
+  const finalists = alive.slice(0, GITHUB_DOWNLOAD_FINALIST_COUNT)
+  const finalSamples = await probeBatch(
+    finalists.map((route) => route.url),
+    GITHUB_DOWNLOAD_FINAL_SAMPLE_BYTES,
+    GITHUB_DOWNLOAD_FINAL_WINDOW_MS
+  )
+  const finalAlive = finalSamples.filter((route) => route.sampleBytes >= GITHUB_DOWNLOAD_MIN_SAMPLE_BYTES)
+    .sort((left, right) => right.bytesPerSecond - left.bytesPerSecond)
+  const rankedTested = [
+    ...finalAlive,
+    ...alive.filter((route) => !finalists.some((finalist) => finalist.url === route.url))
+  ]
+  const rankedUrls = new Set(rankedTested.map((route) => route.url))
+  const failedTested = testedRoutes
+    .filter((url) => !rankedUrls.has(url))
+    .map((url) => ({ url, bytesPerSecond: 0, rangeSupported: false, sampleBytes: 0 }))
+  const untestedRoutes = routes
+    .filter((url) => !testedRoutes.includes(url))
+    .map((url) => ({ url, bytesPerSecond: 0, rangeSupported: false, sampleBytes: 0 }))
+  return [...rankedTested, ...failedTested, ...untestedRoutes]
 }
 
 async function fetchReleaseAsset(urls: string[], expectedSize: number, signal: AbortSignal): Promise<Response> {
