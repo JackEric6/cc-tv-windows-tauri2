@@ -1132,6 +1132,7 @@ export function Player({
       keyboardSeekDirectionRef.current = 0
       keyboardSeekTargetRef.current = target
       activePlayer.currentTime(target)
+      void Promise.resolve(activePlayer.play()).catch(() => undefined)
       setPlaybackPosition(target)
       setKeyboardSeeking(true)
       scheduleKeyboardSeekSync(15_000)
@@ -1168,6 +1169,9 @@ export function Player({
       heldSeekKeys.current.add(key)
       setKeyboardSeeking(true)
       setPlaybackPosition(current)
+      if (activePlayer?.paused()) {
+        void Promise.resolve(activePlayer.play()).catch(() => undefined)
+      }
       setPlayerControlsVisible(true)
       clearInlineControlsTimer()
       clearFullscreenTimer()
