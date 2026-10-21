@@ -1207,7 +1207,8 @@ export function Player({
       }, KEYBOARD_SEEK_UPDATE_INTERVAL_MS)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!visible || !pointerInsidePlayer.current || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker) return
+      const pointerIsInside = pointerInsidePlayer.current || Boolean(stageRef.current?.matches(':hover'))
+      if (!visible || !pointerIsInside || showDanmakuSettings || showPlayerSettings || showEpisodePicker || showCachePicker) return
       if (event.altKey || event.ctrlKey || event.metaKey || isTextInput(event.target) || isTextInput(document.activeElement)) return
 
       if (event.code === 'Space' || event.key === ' ') {
@@ -1579,6 +1580,7 @@ export function Player({
   }
 
   const updateControlsFromPointer = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (event.pointerType === 'mouse' || event.pointerType === 'pen') pointerInsidePlayer.current = true
     if (event.pointerType !== 'mouse') {
       setPlayerControlsVisible(true)
       if (document.fullscreenElement === stageRef.current && activePlayer?.paused()) {
