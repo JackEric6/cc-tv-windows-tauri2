@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '@/components/EmptyState'
 import { VodCard } from '@/components/VodCard'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { Icon } from '@/components/icons'
 import { mergeResults, useApp } from '@/store/useApp'
 import { collectAdultTitleKeys, matchesAdultContent, normalizeName, posterMatchKeys } from '@/utils/normalize'
@@ -326,10 +327,7 @@ export function Search(): JSX.Element {
               title={r.ok ? `${translate('用时 ')}${r.ms}ms` : translate('该站点未返回结果')}
             >
               <span className={`dot ${r.ok && r.list.length ? 'ok' : r.ok ? '' : 'bad'}`} />
-              <span className="source-ordinal">
-                <span className="source-ordinal-prefix">{translate('站点')}</span>
-                <span className="source-ordinal-number">{sourceDisplayLabel(r.siteKey, r.siteName, sourceWithPosterFallback.findIndex((item) => item.siteKey === r.siteKey) + 1)}</span>
-              </span>
+              <OrdinalLabel prefix="站点" value={sourceDisplayLabel(r.siteKey, r.siteName, sourceWithPosterFallback.findIndex((item) => item.siteKey === r.siteKey) + 1)} />
               <span className="chip-count">{r.list.length}</span>
             </button>
           ))}
@@ -390,10 +388,7 @@ export function Search(): JSX.Element {
               <div className="list-row" key={r.siteKey}>
                 <div className="list-row-main">
                   <div className="list-row-title">
-                    <span className="source-ordinal">
-                      <span className="source-ordinal-prefix">{translate('站点')}</span>
-                      <span className="source-ordinal-number">{sourceDisplayLabel(r.siteKey, r.siteName, failedSites.findIndex((item) => item.siteKey === r.siteKey) + 1)}</span>
-                    </span>
+                    <OrdinalLabel prefix="站点" value={sourceDisplayLabel(r.siteKey, r.siteName, failedSites.findIndex((item) => item.siteKey === r.siteKey) + 1)} />
                   </div>
                   <div className="list-row-sub">{translate('该站点未返回结果')}</div>
                 </div>

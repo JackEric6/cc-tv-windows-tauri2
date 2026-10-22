@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { Toasts } from '@/components/Toasts'
 import { Icon } from '@/components/icons'
 import { useApp } from '@/store/useApp'
@@ -218,7 +219,7 @@ function FirstRun(): JSX.Element {
             {presets.map((preset, index) => (
               <div className="preset-row" key={preset.id}>
                 <div className="grow">
-                  <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-title"><OrdinalLabel prefix="配置编号前缀" value={circledOrdinal(index + 1)} /></div>
                   <div className="list-row-sub">{translate('已加密的推荐配置')}</div>
                 </div>
                 <span className="tag tag-outline">

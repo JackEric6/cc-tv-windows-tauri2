@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { EmptyState } from '@/components/EmptyState'
 import { Icon } from '@/components/icons'
 import { Poster } from '@/components/Poster'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { detailKey, useApp } from '@/store/useApp'
 import { pickPlayableLine } from '@/utils/media'
 import { translate } from '@/i18n'
@@ -56,7 +57,7 @@ export function Detail(): JSX.Element {
           <button type="button" className="btn btn-sm" onClick={back}>
             <Icon name="chevron-left" size={14} />{translate('返回')}
           </button>
-          <span className="text-3 fs-12">{translate('片源')}{sourceDisplayLabel(siteKey, site?.name)}</span>
+          <span className="text-3 fs-12"><OrdinalLabel prefix="片源" value={sourceDisplayLabel(siteKey, site?.name)} /></span>
         </div>
         <div className="detail-loading"><span className="spin" />{translate('正在获取影片信息…')}</div>
       </div>
@@ -84,7 +85,7 @@ export function Detail(): JSX.Element {
         <button type="button" className="btn btn-sm" onClick={back}>
           <Icon name="chevron-left" size={14} />{translate('返回')}
         </button>
-        <span className="text-3 fs-12">{translate('片源')}{sourceDisplayLabel(siteKey, detail.siteName)}</span>
+        <span className="text-3 fs-12"><OrdinalLabel prefix="片源" value={sourceDisplayLabel(siteKey, detail.siteName)} /></span>
       </div>
       <div className="detail-hero">
         <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-detail" />

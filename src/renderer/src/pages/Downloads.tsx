@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { OfflineTask } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { Icon } from '@/components/icons'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { sourceDisplayLabel } from '@shared/searchSourcePolicy'
 import { useApp } from '@/store/useApp'
 import { translate } from '@/i18n'
@@ -178,7 +179,7 @@ export function Downloads(): JSX.Element {
               ) : null}
               <div className="download-main">
                 <div className="download-title">{task.movieName}</div>
-                <div className="download-sub">{task.episodeName} <span>·</span> {translate('片源')}{sourceDisplayLabel(task.siteKey, task.siteName)}</div>
+                <div className="download-sub">{task.episodeName} <span>·</span> <OrdinalLabel prefix="片源" value={sourceDisplayLabel(task.siteKey, task.siteName)} /></div>
                 {task.status === 'downloading' || task.status === 'queued' ? (
                   <div className="download-progress" aria-label={`${task.progress}%`}>
                     <span style={{ width: `${task.progress}%` }} />

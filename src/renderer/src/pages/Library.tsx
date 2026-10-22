@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import type { FavoriteItem, HistoryGroup, HistoryItem } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { Poster } from '@/components/Poster'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { Icon } from '@/components/icons'
 import { libraryKey, useApp } from '@/store/useApp'
 import { formatClock, relativeTime, watchPercent } from '@/utils/format'
@@ -77,7 +78,7 @@ export function Library(): JSX.Element {
                   {item.score ? <span className="vod-card-score">{item.score}</span> : null}
                 </div>
                 <div className="vod-card-tags">
-                  <span className="tag tag-outline source-ordinal">{translate('片源')}{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
+                  <span className="tag tag-outline"><OrdinalLabel prefix="片源" value={sourceDisplayLabel(item.siteKey, item.siteName)} /></span>
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost"
@@ -134,7 +135,7 @@ export function Library(): JSX.Element {
                 <div className="history-sub">
                   {item.epName ? <span>{translate("看到 ")}{item.epName}</span> : <span>{translate("第 ")}{item.epIndex + 1}{translate(" 集")}</span>}
                   <span className="text-3">·</span>
-                  <span className="text-3">{translate('片源')}{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
+                  <span className="text-3"><OrdinalLabel prefix="片源" value={sourceDisplayLabel(item.siteKey, item.siteName)} /></span>
                   <span className="text-3">·</span>
                   <span className="text-3">{relativeTime(item.updatedAt)}</span>
                 </div>
@@ -163,7 +164,7 @@ export function Library(): JSX.Element {
                           title={`${translate('片源')}${circledOrdinal(ordinal)} · 看到 ${alt.epName || `第 ${alt.epIndex + 1} 集`} · ${relativeTime(alt.updatedAt)}`}
                           onClick={() => setPick((p) => ({ ...p, [group.key]: key }))}
                         >
-                          <span className="source-ordinal">{translate('片源')}{circledOrdinal(ordinal)}</span>
+                          <OrdinalLabel prefix="片源" value={circledOrdinal(ordinal)} />
                         </button>
                       )
                     })}

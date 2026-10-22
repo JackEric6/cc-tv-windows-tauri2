@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import type { Vod } from '@shared/types'
 import { Poster } from '@/components/Poster'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { androidSearchPriority, sourceDisplayLabel } from '@shared/searchSourcePolicy'
 import { translate } from '@/i18n'
 
@@ -52,7 +53,7 @@ export function VodCard({
             to={`/play/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}/0/0`}
             state={{ playbackReturnTo: returnTo, autoPlay: true }}
           >
-            {translate('片源')}{sourceDisplayLabel(source.siteKey, source.siteName, index + 1)}
+            <OrdinalLabel prefix="片源" value={sourceDisplayLabel(source.siteKey, source.siteName, index + 1)} />
           </Link>
         ))}
       </div>

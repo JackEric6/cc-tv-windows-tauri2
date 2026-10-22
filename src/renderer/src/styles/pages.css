@@ -340,26 +340,29 @@
   gap: 5px;
 }
 
+.ordinal-label,
 .source-ordinal {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 1.2em;
-  line-height: 1;
-  font-size: 13px;
+  height: 1.35em;
+  line-height: 1.35;
   font-variant-numeric: normal;
   vertical-align: middle;
 }
 
+.ordinal-label-prefix,
+.ordinal-label-value,
 .source-ordinal-prefix,
 .source-ordinal-number {
   display: inline-flex;
   align-items: center;
+  height: 100%;
   line-height: 1;
 }
 
-.source-ordinal-number {
-  height: 1.2em;
+.ordinal-label-value {
+  font-family: var(--font-num);
 }
 
 .chip:hover {
@@ -2767,6 +2770,11 @@
 }
 
 .player-episodes {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.player-episode-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 6px;

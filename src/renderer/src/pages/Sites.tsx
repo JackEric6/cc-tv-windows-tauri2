@@ -4,6 +4,7 @@ import { SITE_TYPE_LABEL, SITE_TYPE_TAG } from '@shared/siteLabels'
 import { Switch } from '@/components/Switch'
 import { EmptyState } from '@/components/EmptyState'
 import { Icon } from '@/components/icons'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { useApp } from '@/store/useApp'
 import { translate } from '@/i18n'
 import { circledOrdinal } from '@shared/searchSourcePolicy'
@@ -181,7 +182,7 @@ export function Sites(): JSX.Element {
 
                 <div className="list-row-main">
                   <div className="list-row-title site-name">
-                    <span className="truncate">{ordinal}</span>
+                    <OrdinalLabel prefix="接口" value={circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} />
                     <span className={`tag ${SITE_TYPE_TAG[site.type]}`}>{translate(SITE_TYPE_LABEL[site.type])}</span>
                     {site.searchable ? <span className="tag tag-outline">{translate("可搜索")}</span> : null}
                     {!site.searchable && !site.unsupported ? (

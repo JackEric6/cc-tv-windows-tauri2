@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import type { AppSettings, ConfigSource, ParseInfo, ParseTestResult, PlayerInfo } from '@shared/types'
 import { useApp } from '@/store/useApp'
 import { Switch } from '@/components/Switch'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { Icon } from '@/components/icons'
 import { relativeTime } from '@/utils/format'
 import { SITE_TYPE_LABEL } from '@shared/siteLabels'
@@ -261,7 +262,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
               <div className="list-row" key={source.id}>
                 <span className={`dot ${source.error ? 'bad' : source.lastSync ? 'ok' : ''}`} />
                 <div className="list-row-main">
-                  <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-title"><OrdinalLabel prefix="配置编号前缀" value={circledOrdinal(index + 1)} /></div>
                   <div className="list-row-sub">{source.kind === 'url' ? translate('远程配置') : translate('本地配置')}</div>
                 </div>
                 {source.error ? <span className="tag tag-danger">{translate("同步失败")}</span> : null}
@@ -397,7 +398,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                 {presets.map((preset, index) => (
                   <div className="preset-row" key={preset.id}>
                     <div className="grow">
-                      <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
+                      <div className="list-row-title"><OrdinalLabel prefix="配置编号前缀" value={circledOrdinal(index + 1)} /></div>
                       <div className="list-row-sub">{translate('内置配置')}</div>
                     </div>
                     <span className="tag tag-outline">
@@ -456,7 +457,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                     <>
                       <div className="list-row-main">
                         <div className="list-row-title">
-                          <span className="truncate">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</span>
+                          <OrdinalLabel prefix="配置编号前缀" value={circledOrdinal(index + 1)} />
                           <span className="tag tag-outline">{source.kind === 'url' ? '订阅' : '本地'}</span>
                           {source.error ? <span className="tag tag-danger">{translate("异常")}</span> : null}
                         </div>
@@ -697,7 +698,7 @@ function ParseSettingsSection(): JSX.Element {
                 <div className="list-row" key={item.url}>
                   <div className="list-row-main">
                     <div className="list-row-title">
-                      {translate('解析编号前缀')}{circledOrdinal(index + 1)}
+                      <OrdinalLabel prefix="解析编号前缀" value={circledOrdinal(index + 1)} />
                       <span className={`tag ${item.origin === 'custom' ? 'tag-accent' : 'tag-outline'}`}>
                         {translate(item.origin === 'custom' ? '手动添加' : '配置里带的')}
                       </span>

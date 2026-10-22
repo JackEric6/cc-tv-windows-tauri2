@@ -5,6 +5,7 @@ import type { AppSettings, DanmakuCandidate, DanmakuCue } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { AiSummary } from '@/components/AiSummary'
 import { Poster } from '@/components/Poster'
+import { OrdinalLabel } from '@/components/OrdinalLabel'
 import { DanmakuCanvas } from '@/components/DanmakuCanvas'
 import { DanmakuSettingsPanel } from '@/components/DanmakuSettingsPanel'
 import { Icon } from '@/components/icons'
@@ -1612,7 +1613,7 @@ export function Player({
           {detail.vod_name}
         </span>
         <span className="text-3 fs-12">
-          {translate('线路')}{circledOrdinal(lineIndex + 1)} · {episode.name}
+          <OrdinalLabel prefix="线路" value={circledOrdinal(lineIndex + 1)} /> · {episode.name}
         </span>
         {!isFullscreen ? (
           <button
@@ -2028,7 +2029,7 @@ export function Player({
             <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-side" />
             <div>
               <div className="player-side-title">{detail.vod_name}</div>
-              <div className="text-3 fs-12">{translate('线路')}{circledOrdinal(lineIndex + 1)}</div>
+              <div className="text-3 fs-12"><OrdinalLabel prefix="线路" value={circledOrdinal(lineIndex + 1)} /></div>
               <div className="text-3 fs-12">{translate("\n                第 ")}{epIndex + 1} / {episodes.length}{translate(" 集\n              ")}</div>
             </div>
           </div>
@@ -2045,7 +2046,7 @@ export function Player({
                     title={`${translate('线路')}${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
                     onClick={() => navigateToLine(index)}
                   >
-                    {translate('线路')}{circledOrdinal(index + 1)}
+                    <OrdinalLabel prefix="线路" value={circledOrdinal(index + 1)} />
                   </button>
                 ))}
               </div>
@@ -2070,7 +2071,7 @@ export function Player({
                       className="chip chip-source active"
                       title={translate('正在看')}
                     >
-                      {translate('片源')}{label}
+                      <OrdinalLabel prefix="片源" value={label} />
                     </span>
                   ) : (
                     <Link
@@ -2080,7 +2081,7 @@ export function Player({
                       to={`/play/${encodeURIComponent(v.siteKey)}/${encodeURIComponent(v.vod_id)}/0/0`}
                       state={playerRouteState}
                     >
-                      {translate('片源')}{label}
+                      <OrdinalLabel prefix="片源" value={label} />
                     </Link>
                   )
                 })}
@@ -2100,17 +2101,20 @@ export function Player({
           </div>
 
           <div className="player-episodes">
-            {episodes.map((ep) => (
-              <button
-                key={`${ep.index}-${ep.url}`}
-                type="button"
-                className={`episode episode-sm ${ep.index === epIndex ? 'active' : ''}`}
-                onClick={() => goTo(ep.index)}
-                title={ep.name}
-              >
-                {ep.name}
-              </button>
-            ))}
+            <div className="player-side-label">{translate('选集')}</div>
+            <div className="player-episode-grid">
+              {episodes.map((ep) => (
+                <button
+                  key={`${ep.index}-${ep.url}`}
+                  type="button"
+                  className={`episode episode-sm ${ep.index === epIndex ? 'active' : ''}`}
+                  onClick={() => goTo(ep.index)}
+                  title={ep.name}
+                >
+                  {ep.name}
+                </button>
+              ))}
+            </div>
           </div>
         </aside>
       </div>
