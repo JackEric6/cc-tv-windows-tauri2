@@ -345,8 +345,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 1.35em;
-  line-height: 1.35;
+  line-height: inherit;
   font-variant-numeric: normal;
   vertical-align: middle;
 }
@@ -362,10 +361,26 @@
 }
 
 .ordinal-label-value {
-  font-family: "Segoe UI Symbol", "Arial Unicode MS", var(--font);
-  font-size: 1.1em;
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 1em;
+  min-width: 1em;
+  height: 1em;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-family: var(--font);
+  font-size: 1em;
   font-weight: inherit;
-  transform: translateY(-0.06em);
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.ordinal-label-number {
+  font-size: 0.76em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .chip:hover {
