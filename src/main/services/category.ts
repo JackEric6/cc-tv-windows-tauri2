@@ -29,7 +29,7 @@ const CATEGORY_SITE_KEYS = new Set(['xgzy', 'dyttzy', 'bfzy'])
  */
 
 /** 「作品类型」之外的分类，连同它整棵子树一起丢掉 */
-const SKIP = /(解说|演员|明星|资讯|新闻|预告|花絮|伦理|福利|写真|片花|榜单)/
+const SKIP = /(解说|演员|明星|资讯|新闻|预告|花絮|伦理|理论片|福利|写真|片花|榜单)/
 
 /**
  * 归并规则：从上往下第一个命中的就是结果，所以顺序有讲究
@@ -374,7 +374,10 @@ async function browseSite(
     }
     const body = payload as Record<string, unknown>
     const raw = asArray<Record<string, unknown>>(body.list)
-    const list = raw.slice(0, limit).map((item) => cmsItemToVod(item, site))
+    const list = raw
+      .slice(0, limit)
+      .map((item) => cmsItemToVod(item, site))
+      .filter((vod) => !/理论片/.test(vod.type_name ?? ''))
     // 多数采集站每页固定 20 条，和我们要的 limit 不一定一致，
     // 所以页数优先读接口自己报的 pagecount，读不到才按「这一页满没满」猜
     const reported = Number(body.pagecount)
