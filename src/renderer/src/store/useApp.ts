@@ -662,10 +662,12 @@ export const useApp = create<AppState>((set, get) => ({
       set((s) =>
         s.search.wd === keyword
           ? {
-              // A cancelled IPC run may resolve with no snapshot after progress events already arrived.
-              // Keep those streamed results instead of replacing them with an empty array.
+              // Merge the final IPC snapshot with streamed progress so an empty or partial snapshot
+              // cannot erase results that were already delivered for this search.
               ...(() => {
-                const results = res.results.length || res.total === 0 ? res.results : s.search.results
+                const resultsBySite = new Map(s.search.results.map((result) => [result.siteKey, result]))
+                for (const result of res.results) resultsBySite.set(result.siteKey, result)
+                const results = [...resultsBySite.values()]
                 return {
                   search: {
                     ...s.search,
