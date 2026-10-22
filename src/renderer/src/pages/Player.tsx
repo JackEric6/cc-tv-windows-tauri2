@@ -236,6 +236,7 @@ export function Player({
   const danmakuSequence = useRef(0)
   const danmakuBatchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [activePlayer, setActivePlayer] = useState<VideoPlayer | null>(null)
+  const [inlineClockHost, setInlineClockHost] = useState<HTMLElement | null>(null)
 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -582,10 +583,12 @@ export function Player({
         hls,
         autoplay: visibleRef.current && autoplayRef.current,
         bigPlayButton: false,
+        reactDrivenTime: true,
         toggleFullscreen: () => { void toggleFullscreen() }
       })
       playerBox.current = player
       playerRef.current = player
+      setInlineClockHost((player.getChild('controlBar') as any)?.el() ?? null)
       setActivePlayer(player)
       void loadPreviewFrames(previewCacheScope).then((frames) => {
         if (playerRef.current !== player || player.isDisposed()) return
@@ -881,6 +884,7 @@ export function Player({
       alive = false
       stopPreviewScanForPlayer()
       playerRef.current = null
+      setInlineClockHost(null)
       setActivePlayer(null)
       playerBox.current?.dispose()
     }
@@ -2111,6 +2115,12 @@ export function Player({
           </div>
         </aside>
       </div>
+      {inlineClockHost && !isFullscreen ? createPortal(
+        <time className="player-inline-clock" aria-label={translate('已播放时长和总时长')}>
+          {formatClock(playbackPosition)} / {playbackDuration > 0 ? formatClock(playbackDuration) : '--:--'}
+        </time>,
+        inlineClockHost
+      ) : null}
     </div>
   )
 }

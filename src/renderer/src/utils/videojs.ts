@@ -12,6 +12,7 @@ export interface VideoOptions {
   bigPlayButton?: boolean
   toggleFullscreen?: () => void
   preview?: boolean
+  reactDrivenTime?: boolean
 }
 
 export function createVideoPlayer(container: HTMLDivElement, options: VideoOptions): VideoPlayer {
@@ -35,9 +36,9 @@ export function createVideoPlayer(container: HTMLDivElement, options: VideoOptio
     playbackRates: [0.75, 1, 1.25, 1.5, 2, 3],
     poster: options.poster,
     controlBar: options.preview ? false : {
-      currentTimeDisplay: true,
-      timeDivider: true,
-      durationDisplay: true,
+      currentTimeDisplay: !options.reactDrivenTime,
+      timeDivider: !options.reactDrivenTime,
+      durationDisplay: !options.reactDrivenTime,
       remainingTimeDisplay: false,
       pictureInPictureToggle: true,
       playbackRateMenuButton: true,
