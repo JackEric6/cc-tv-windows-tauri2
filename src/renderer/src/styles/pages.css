@@ -1052,6 +1052,21 @@
   max-width: 420px;
 }
 
+.player-heading-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.player-heading-episode {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .detail-loading {
   display: flex;
   align-items: center;

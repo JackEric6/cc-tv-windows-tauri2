@@ -1612,8 +1612,10 @@ export function Player({
         <span className="detail-title-inline" title={detail.vod_name}>
           {detail.vod_name}
         </span>
-        <span className="text-3 fs-12">
-          <OrdinalLabel prefix="线路" value={circledOrdinal(lineIndex + 1)} /> · {episode.name}
+        <span className="player-heading-meta text-3 fs-12">
+          <OrdinalLabel prefix="线路" value={circledOrdinal(lineIndex + 1)} />
+          <span aria-hidden="true">·</span>
+          <span className="player-heading-episode">{episode.name}</span>
         </span>
         {!isFullscreen ? (
           <button
