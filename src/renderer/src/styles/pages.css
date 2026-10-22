@@ -1862,7 +1862,7 @@
 }
 
 .player-fullscreen-fixed-info .fullscreen-playback-time {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .player-fullscreen-bar {
@@ -1891,7 +1891,7 @@
   flex: 0 0 auto;
   padding: 0 5px;
   color: rgba(255, 255, 255, .88);
-  font-size: 13px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
