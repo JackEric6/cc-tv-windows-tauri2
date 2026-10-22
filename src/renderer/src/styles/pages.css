@@ -1516,6 +1516,17 @@
   display: none;
 }
 
+.player-stage .video-js .vjs-control-bar {
+  transition: opacity .18s ease, visibility .18s ease;
+}
+
+.player-stage .video-js.vjs-user-inactive.vjs-playing .vjs-control-bar {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: none;
+}
+
 .player-main.controls-hidden .player-stage .video-js .vjs-control-bar {
   opacity: 0;
   visibility: hidden;
@@ -1528,10 +1539,6 @@
 
 .player-pin-toggle.active {
   color: var(--accent, #6a3de8);
-}
-
-.player-stage .video-js .vjs-control-bar {
-  transition: opacity .18s ease, visibility .18s ease;
 }
 
 .player-stage .video-js.vjs-theme-city .vjs-volume-panel {
