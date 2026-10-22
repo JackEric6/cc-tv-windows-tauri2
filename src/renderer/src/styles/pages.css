@@ -363,7 +363,7 @@
 
 .ordinal-label-value {
   font-family: "Segoe UI Symbol", "Arial Unicode MS", var(--font);
-  font-size: 1em;
+  font-size: 1.1em;
   font-weight: inherit;
   transform: translateY(-0.06em);
 }
