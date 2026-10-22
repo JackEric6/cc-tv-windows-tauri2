@@ -73,3 +73,7 @@ export function sourceOrdinal(siteKey: string, siteName = ''): number | undefine
 export function circledOrdinal(ordinal: number): string {
   return CIRCLED_NUMBERS[ordinal - 1] ?? String(ordinal)
 }
+
+export function sourceDisplayLabel(siteKey: string, siteName = '', fallbackOrdinal = 1): string {
+  return circledOrdinal(sourceOrdinal(siteKey, siteName) ?? Math.max(1, fallbackOrdinal))
+}

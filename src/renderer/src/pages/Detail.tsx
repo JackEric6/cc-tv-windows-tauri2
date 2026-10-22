@@ -6,6 +6,7 @@ import { Poster } from '@/components/Poster'
 import { detailKey, useApp } from '@/store/useApp'
 import { pickPlayableLine } from '@/utils/media'
 import { translate } from '@/i18n'
+import { sourceDisplayLabel } from '@shared/searchSourcePolicy'
 
 export function Detail(): JSX.Element {
   const { siteKey = '', vodId = '' } = useParams()
@@ -55,7 +56,7 @@ export function Detail(): JSX.Element {
           <button type="button" className="btn btn-sm" onClick={back}>
             <Icon name="chevron-left" size={14} />{translate('返回')}
           </button>
-          <span className="text-3 fs-12">{site?.name ?? siteKey}</span>
+          <span className="text-3 fs-12">{sourceDisplayLabel(siteKey, site?.name)}</span>
         </div>
         <div className="detail-loading"><span className="spin" />{translate('正在获取影片信息…')}</div>
       </div>
@@ -83,7 +84,7 @@ export function Detail(): JSX.Element {
         <button type="button" className="btn btn-sm" onClick={back}>
           <Icon name="chevron-left" size={14} />{translate('返回')}
         </button>
-        <span className="text-3 fs-12">{detail.siteName}{site?.sourceName ? ` · ${site.sourceName}` : ''}</span>
+        <span className="text-3 fs-12">{sourceDisplayLabel(siteKey, detail.siteName)}</span>
       </div>
       <div className="detail-hero">
         <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-detail" />

@@ -6,6 +6,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Icon } from '@/components/icons'
 import { useApp } from '@/store/useApp'
 import { translate } from '@/i18n'
+import { circledOrdinal } from '@shared/searchSourcePolicy'
 
 const TYPE_ORDER: SiteType[] = [3, 4, 1, 0, 2]
 
@@ -19,7 +20,6 @@ export function Sites(): JSX.Element {
 
   const [kw, setKw] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | SiteType>('all')
-  const [sourceFilter, setSourceFilter] = useState<string>('all')
   const [onlyEnabled, setOnlyEnabled] = useState(false)
   const [testing, setTesting] = useState<Record<string, boolean>>({})
   const [health, setHealth] = useState<Record<string, { ok: boolean; text: string }>>({})
@@ -28,7 +28,7 @@ export function Sites(): JSX.Element {
     try {
       await setSiteEnabled(site.key, enabled)
     } catch (err) {
-      notify(`${site.name} 设置失败：${(err as Error).message}`, 'danger')
+      notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
       await refreshSites().catch(() => undefined)
     }
   }
@@ -41,15 +41,10 @@ export function Sites(): JSX.Element {
     try {
       await setSiteAreaEnabled(site.key, area, enabled)
     } catch (err) {
-      notify(`${site.name} 设置失败：${(err as Error).message}`, 'danger')
+      notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
       await refreshSites().catch(() => undefined)
     }
   }
-
-  const sourceNames = useMemo(
-    () => Array.from(new Set(sites.map((s) => s.sourceName))).sort(),
-    [sites]
-  )
 
   const typeCounts = useMemo(() => {
     const map = new Map<SiteType, number>()
@@ -61,16 +56,13 @@ export function Sites(): JSX.Element {
     const k = kw.trim().toLowerCase()
     return sites.filter((s) => {
       if (typeFilter !== 'all' && s.type !== typeFilter) return false
-      if (sourceFilter !== 'all' && s.sourceName !== sourceFilter) return false
       if (onlyEnabled && !s.enabled) return false
       if (!k) return true
       return (
-        s.name.toLowerCase().includes(k) ||
-        s.key.toLowerCase().includes(k) ||
-        s.api.toLowerCase().includes(k)
+        circledOrdinal(sites.findIndex((item) => item.key === s.key) + 1).includes(k)
       )
     })
-  }, [sites, kw, typeFilter, sourceFilter, onlyEnabled])
+  }, [sites, kw, typeFilter, onlyEnabled])
 
   async function test(site: Site): Promise<void> {
     setTesting((t) => ({ ...t, [site.key]: true }))
@@ -78,9 +70,9 @@ export function Sites(): JSX.Element {
       const result = await window.api.sites.test(site.key)
       setHealth((h) => ({
         ...h,
-        [site.key]: { ok: result.ok, text: result.ok ? `${result.ms}ms · ${result.message}` : result.message }
+        [site.key]: { ok: result.ok, text: result.ok ? `${result.ms}ms` : translate('测试失败') }
       }))
-      if (!result.ok) notify(`${site.name}：${result.message}`, 'warn')
+      if (!result.ok) notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)}：${translate('测试失败')}`, 'warn')
     } finally {
       setTesting((t) => {
         const next = { ...t }
@@ -142,7 +134,7 @@ export function Sites(): JSX.Element {
           <span className="search-icon">
             <Icon name="search" size={15} />
           </span>
-          <input value={kw} placeholder={translate("搜索站点名称 / key / 接口")} onChange={(e) => setKw(e.target.value)} />
+          <input value={kw} placeholder={translate("按序号筛选")} onChange={(e) => setKw(e.target.value)} />
         </div>
 
         <div className="chips">
@@ -166,22 +158,6 @@ export function Sites(): JSX.Element {
 
         <div className="grow" />
 
-        {sourceNames.length > 1 ? (
-          <select
-            className="input"
-            style={{ width: 170 }}
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-          >
-            <option value="all">{translate('全部配置源')}</option>
-            {sourceNames.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        ) : null}
-
         <button
           type="button"
           className={`chip${onlyEnabled ? ' active' : ''}`}
@@ -193,6 +169,7 @@ export function Sites(): JSX.Element {
         <div className="list">
           {filtered.map((site) => {
             const h = health[site.key]
+            const ordinal = circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)
             return (
               <div className="list-row" key={site.key}>
                 <Switch
@@ -204,7 +181,7 @@ export function Sites(): JSX.Element {
 
                 <div className="list-row-main">
                   <div className="list-row-title site-name">
-                    <span className="truncate">{site.name}</span>
+                    <span className="truncate">{ordinal}</span>
                     <span className={`tag ${SITE_TYPE_TAG[site.type]}`}>{translate(SITE_TYPE_LABEL[site.type])}</span>
                     {site.searchable ? <span className="tag tag-outline">{translate("可搜索")}</span> : null}
                     {!site.searchable && !site.unsupported ? (
@@ -212,18 +189,16 @@ export function Sites(): JSX.Element {
                     ) : null}
                   </div>
                   <div className="list-row-sub">
-                    <span className="site-key">{site.key}</span>
-                    <span style={{ margin: '0 8px' }}>·</span>
                     {site.unsupported ? (
-                      <span style={{ color: 'var(--warn)' }}>{site.unsupported}</span>
+                      <span style={{ color: 'var(--warn)' }}>{translate('暂不可用')}</span>
                     ) : (
-                      <span className="mono">{site.api || translate('未配置接口')}</span>
+                      <span className="mono">{translate('接口已配置')}</span>
                     )}
                   </div>
                 </div>
 
                 {h ? (
-                  <span className="health" title={h.text}>
+                  <span className="health">
                     <span className={`dot ${h.ok ? 'ok' : 'bad'}`} />
                     {h.text.length > 26 ? `${h.text.slice(0, 26)}…` : h.text}
                   </span>
@@ -237,7 +212,7 @@ export function Sites(): JSX.Element {
                 )}
 
                 <div className="list-row-actions">
-                  <div className="site-area-toggles" aria-label={`${site.name}的区域开关`}>
+                  <div className="site-area-toggles" aria-label={`${ordinal}的区域开关`}>
                     <label title={translate("控制该站点是否显示在首页片单中")}>
                       <span>{translate("首页")}</span>
                       <Switch checked={site.homeEnabled} onChange={(value) => void updateSiteAreaEnabled(site, 'home', value)} />

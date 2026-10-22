@@ -11,6 +11,7 @@ import type {
   NativeAdapter
 } from '@shared/types'
 import { fetchText, parseLooseJson } from './http'
+import { decryptSensitiveText } from './sensitiveData'
 
 /**
  * 配置解析层：同时吃 TVBox 兼容方言与本项目简洁方言。
@@ -420,9 +421,12 @@ export async function loadConfigSource(
     if (depth > 4) throw new Error('配置链接嵌套层级超过 4 层')
     visited.add(visitKey)
 
-    const text = kind === 'file' && depth === 0
+    const fileText = kind === 'file' && depth === 0
       ? await fs.readFile(protectedUrl.url, 'utf-8')
-      : await fetchText(baseUrl, { timeout })
+      : undefined
+    const text = fileText === undefined
+      ? await fetchText(baseUrl, { timeout })
+      : decryptSensitiveText(fileText)
     let json: unknown
     try {
       json = decodeTvboxPayload(text, protectedUrl.key)

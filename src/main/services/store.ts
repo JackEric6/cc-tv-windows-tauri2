@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { app } from '../../tauri/platform'
+import { decryptSensitiveJson, encryptSensitiveJson } from './sensitiveData'
 
 /**
  * 极简 JSON 文件存储：内存缓存 + 防抖落盘。
@@ -22,7 +23,14 @@ export async function readStore<T>(name: string, fallback: T): Promise<T> {
   if (memory.has(name)) return memory.get(name) as T
   try {
     const text = await fs.readFile(fileOf(name), 'utf-8')
-    const data = JSON.parse(text) as T
+    let data: T
+    if (text.startsWith('ccenc:v1:')) {
+      data = decryptSensitiveJson<T>(text)
+    } else {
+      // Plain JSON from earlier releases is migrated on the next flush.
+      data = JSON.parse(text) as T
+      writeStore(name, data)
+    }
     memory.set(name, data)
     return data
   } catch {
@@ -60,7 +68,7 @@ export async function flushStore(name?: string): Promise<void> {
       const tmp = `${target}.tmp`
       try {
         await fs.mkdir(app.getPath('userData'), { recursive: true })
-        await fs.writeFile(tmp, JSON.stringify(memory.get(n), null, 2), 'utf-8')
+        await fs.writeFile(tmp, encryptSensitiveJson(memory.get(n)), 'utf-8')
         try {
           await fs.rename(tmp, target)
         } catch (error) {

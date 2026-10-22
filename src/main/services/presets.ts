@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { app } from '../../tauri/platform'
-import congcongConfig from '../assets/congcong_sources.json'
+import { CONGCONG_SOURCES_ENCRYPTED } from '../assets/congcong_sources.enc'
 import { isAndroidSource, isSearchableByDefault } from '@shared/searchSourcePolicy'
 import type { ConfigSource, SourcePresetInfo } from '@shared/types'
 import { addSource, listSources, syncSource } from './sources'
 import { readStore, writeStore } from './store'
+import { decryptSensitiveCompressedJson, decryptSensitiveJson, encryptSensitiveJson } from './sensitiveData'
 
 /** 记住「内置订阅已经送过了」，避免用户删光后重启又冒出来 */
 const BUNDLED_FLAG = 'bundled-sources'
@@ -37,7 +38,7 @@ export interface SourcePreset {
   }
 }
 
-const sourceConfig = congcongConfig as unknown as Record<string, any>
+const sourceConfig = decryptSensitiveCompressedJson<Record<string, any>>(CONGCONG_SOURCES_ENCRYPTED)
 const GUAZI_HOME_SECTIONS = [
   ['74151', '10月重磅新剧', '4'],
   ['46296', '最新热播电影', '3'],
@@ -57,24 +58,17 @@ const GUAZI_HOME_SECTIONS = [
 const CONGCONG_SITES = [
   ...(Array.isArray(sourceConfig.sites) ? sourceConfig.sites : []).map((raw) => {
     const key = String(raw.key ?? '')
-    const api = key === 'xgzy'
-      ? 'https://caiji.xgzyapi.com/api.php/provide/vod/from/xiguam3u8/'
-      : key === 'guazi'
-        ? 'https://api.anctjd.com/App/Index/findMoreVod'
-        : String(raw.api ?? '')
     const special = key === 'guazi'
+    const nativeAdapter = ['ikanbot', 'cz4k', 'fan_nomi'].includes(key)
     return {
       ...raw,
       enabled: raw.enabled ?? true,
       searchable: isSearchableByDefault(key) ? 1 : 0,
-      type: special ? 4 : 3,
+      type: special ? 4 : nativeAdapter ? 1 : 3,
       filterable: special ? 0 : raw.filterable,
-      api
+      api: String(raw.api ?? '')
     }
-  }),
-  { key: 'ikanbot', name: '爱看', type: 1, api: 'https://www1.ikanbot.com', searchable: 1, quickSearch: 1, filterable: 1, timeout: 25, enabled: true },
-  { key: 'cz4k', name: '厂长', type: 1, api: 'https://www.cz4k.com', searchable: 0, quickSearch: 0, filterable: 0, timeout: 30, enabled: true },
-  { key: 'fan_nomi', name: '糯米', type: 1, api: 'https://vip.wwgz.cn:5200', searchable: 1, quickSearch: 1, filterable: 0, timeout: 15, enabled: true }
+  })
 ]
 
 const CONGCONG_PRESET: SourcePreset = {
@@ -107,24 +101,10 @@ const PUBLIC_CMS: SourcePreset = {
     format: 'tvbox-desktop/1',
     name: '公开可用源（苹果CMS 采集站）',
     note: '实测存活的公开采集接口，全部是标准苹果CMS v10 的 /api.php/provide/vod。判断标准有三条：列表接口有数据、带 wd 的搜索有结果、详情能解析出剧集地址。',
-    sites: [
-      {
-        key: 'dyttzy',
-        name: '电影天堂资源',
-        type: 'cms',
-        api: 'https://caiji.dyttzyapi.com/api.php/provide/vod',
-        searchable: 1,
-        enabled: true
-      },
-      {
-        key: 'subo',
-        name: '素博',
-        type: 'cms',
-        api: 'https://subocaiji.com/api.php/provide/vod',
-        searchable: isSearchableByDefault('subo') ? 1 : 0,
-        enabled: true
-      }
-    ],
+    sites: ['dyttzy', 'subo'].flatMap((key) => {
+      const site = CONGCONG_SITES.find((item) => String(item.key ?? '') === key)
+      return site ? [{ ...site }] : []
+    }),
     // 首页内容位。写在这里的行优先于「每个源一条最近更新」的默认行为，
     // 让首启就有几行带分类的内容，而不是五条一模一样的「最近更新」。
     // typeId 用的是苹果CMS v10 的默认分类 id（6=动作片、13=国产剧、42=日本动漫），
@@ -196,7 +176,7 @@ export async function addPreset(id: string): Promise<ConfigSource> {
   const dir = join(app.getPath('userData'), 'presets')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${preset.id}.json`)
-  writeFileSync(file, JSON.stringify(preset.config, null, 2), 'utf8')
+  writeFileSync(file, encryptSensitiveJson(preset.config), 'utf8')
 
   const existing = await listSources()
   const already = existing.find((s) => s.url === file)
@@ -243,7 +223,13 @@ async function migrateBundledSources(): Promise<boolean> {
   if (!source || !existsSync(source.url)) return false
 
   try {
-    const config = JSON.parse(readFileSync(source.url, 'utf8')) as Record<string, unknown>
+    const stored = readFileSync(source.url, 'utf8')
+    let config: Record<string, unknown>
+    try {
+      config = decryptSensitiveJson<Record<string, unknown>>(stored)
+    } catch {
+      config = JSON.parse(stored) as Record<string, unknown>
+    }
     if (!Array.isArray(config.sites)) return false
     const currentSites = config.sites as Record<string, unknown>[]
     const normalizedSites = currentSites.filter((site) => String(site.key ?? '').trim().toLowerCase() !== 'jianpian').map((site) => {
@@ -261,12 +247,13 @@ async function migrateBundledSources(): Promise<boolean> {
     })
     const mergedSites = mergeSites(normalizedSites, CONGCONG_PRESET.config.sites)
     const sitesChanged = JSON.stringify(mergedSites) !== JSON.stringify(currentSites)
-    if (!sitesChanged) return false
+    const needsEncryption = !stored.startsWith('ccenc:v1:')
+    if (!sitesChanged && !needsEncryption) return false
 
-    config.sites = mergedSites
-    writeFileSync(source.url, JSON.stringify(config, null, 2), 'utf8')
-    await syncSource(source.id)
-    return true
+    if (sitesChanged) config.sites = mergedSites
+    writeFileSync(source.url, encryptSensitiveJson(config), 'utf8')
+    if (sitesChanged) await syncSource(source.id)
+    return sitesChanged
   } catch (err) {
     console.error('[presets] 迁移 Android 1.0.74 影视源失败：', err)
     return false

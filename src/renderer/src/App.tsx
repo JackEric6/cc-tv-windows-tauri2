@@ -5,6 +5,7 @@ import { TopBar } from '@/components/TopBar'
 import { Toasts } from '@/components/Toasts'
 import { Icon } from '@/components/icons'
 import { useApp } from '@/store/useApp'
+import { circledOrdinal } from '@shared/searchSourcePolicy'
 import { setUiLanguage, translate } from '@/i18n'
 import { Home } from '@/pages/Home'
 import { Search } from '@/pages/Search'
@@ -214,11 +215,11 @@ function FirstRun(): JSX.Element {
         {presets.length ? (
           <div className="first-run-presets">
             <div className="first-run-presets-title">{translate("或者一键添加内置推荐订阅")}</div>
-            {presets.map((preset) => (
+            {presets.map((preset, index) => (
               <div className="preset-row" key={preset.id}>
                 <div className="grow">
-                  <div className="list-row-title">{preset.name}</div>
-                  <div className="list-row-sub">{preset.desc}</div>
+                  <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-sub">{translate('已加密的推荐配置')}</div>
                 </div>
                 <span className="tag tag-outline">
                   {preset.siteCount}{translate(" 个站点\n                ")}</span>

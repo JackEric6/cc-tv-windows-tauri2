@@ -16,6 +16,7 @@ import { formatClock } from '@/utils/format'
 import { loadPreviewFrames, savePreviewFrame } from '@/utils/previewFrameCache'
 import { normalizeName } from '@/utils/normalize'
 import { translate } from '@/i18n'
+import { circledOrdinal, sourceDisplayLabel } from '@shared/searchSourcePolicy'
 
 const DANMAKU_INITIAL_BATCH_SIZE = 500
 const DANMAKU_APPEND_BATCH_SIZE = 1000
@@ -1611,7 +1612,7 @@ export function Player({
           {detail.vod_name}
         </span>
         <span className="text-3 fs-12">
-          {line?.name} · {episode.name}
+          {circledOrdinal(lineIndex + 1)} · {episode.name}
         </span>
         {!isFullscreen ? (
           <button
@@ -2017,7 +2018,7 @@ export function Player({
               epName: episode.name,
               epIndex,
               epTotal: episodes.length,
-              lineName: line?.name
+              lineName: circledOrdinal(lineIndex + 1)
             }}
           />
         </div>
@@ -2027,7 +2028,7 @@ export function Player({
             <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-side" />
             <div>
               <div className="player-side-title">{detail.vod_name}</div>
-              <div className="text-3 fs-12">{line?.name}</div>
+              <div className="text-3 fs-12">{circledOrdinal(lineIndex + 1)}</div>
               <div className="text-3 fs-12">{translate("\n                第 ")}{epIndex + 1} / {episodes.length}{translate(" 集\n              ")}</div>
             </div>
           </div>
@@ -2041,10 +2042,10 @@ export function Player({
                     key={`${item.name}-${index}`}
                     type="button"
                     className={`chip chip-source${index === lineIndex ? ' active' : ''}`}
-                    title={`${item.name} · ${item.episodes.length} 集`}
+                    title={`${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
                     onClick={() => navigateToLine(index)}
                   >
-                    {item.name}
+                    {circledOrdinal(index + 1)}
                   </button>
                 ))}
               </div>
@@ -2062,26 +2063,24 @@ export function Player({
               <div className="source-chips">
                 {sources.map((v) => {
                   const active = v.siteKey === siteKey && v.vod_id === vodId
-                  const title = v.vod_name && v.vod_name !== detail.vod_name
-                    ? `${v.siteName}（该源片名：${v.vod_name}）`
-                    : v.siteName
+                  const label = sourceDisplayLabel(v.siteKey, v.siteName, sources.findIndex((item) => item.siteKey === v.siteKey) + 1)
                   return active ? (
                     <span
                       key={`${v.siteKey}/${v.vod_id}`}
                       className="chip chip-source active"
-                      title={`${title} · 正在看`}
+                      title={translate('正在看')}
                     >
-                      {v.siteName}
+                      {label}
                     </span>
                   ) : (
                     <Link
                       key={`${v.siteKey}/${v.vod_id}`}
                       className="chip chip-source"
-                      title={`${title} · 点一下换到这个源`}
+                      title={translate('切换片源')}
                       to={`/play/${encodeURIComponent(v.siteKey)}/${encodeURIComponent(v.vod_id)}/0/0`}
                       state={playerRouteState}
                     >
-                      {v.siteName}
+                      {label}
                     </Link>
                   )
                 })}

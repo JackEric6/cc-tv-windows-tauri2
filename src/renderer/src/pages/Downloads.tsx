@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { OfflineTask } from '@shared/types'
 import { EmptyState } from '@/components/EmptyState'
 import { Icon } from '@/components/icons'
+import { sourceDisplayLabel } from '@shared/searchSourcePolicy'
 import { useApp } from '@/store/useApp'
 import { translate } from '@/i18n'
 
@@ -177,7 +178,7 @@ export function Downloads(): JSX.Element {
               ) : null}
               <div className="download-main">
                 <div className="download-title">{task.movieName}</div>
-                <div className="download-sub">{task.episodeName} <span>·</span> {task.siteName}</div>
+                <div className="download-sub">{task.episodeName} <span>·</span> {sourceDisplayLabel(task.siteKey, task.siteName)}</div>
                 {task.status === 'downloading' || task.status === 'queued' ? (
                   <div className="download-progress" aria-label={`${task.progress}%`}>
                     <span style={{ width: `${task.progress}%` }} />
@@ -188,7 +189,7 @@ export function Downloads(): JSX.Element {
                   {task.status === 'completed' ? <span>{formatBytes(task.downloadedBytes)}</span> : null}
                   {task.status === 'downloading' || task.status === 'queued' ? <span>{task.progress}% · {formatBytes(task.downloadedBytes)} / {formatTaskTotal(task)}</span> : null}
                   {task.status === 'downloading' ? <span>{formatBytes(speeds[task.id] ?? 0)}{translate("/秒 · 剩余 ")}{expectedBytes(task) >= task.downloadedBytes && (speeds[task.id] ?? 0) > 0 ? formatDuration((expectedBytes(task) - task.downloadedBytes) / (speeds[task.id] ?? 1)) : '计算中'}</span> : null}
-                  {task.error ? <span className={task.status === 'failed' ? 'download-error' : ''}>{task.error}</span> : null}
+                  {task.error ? <span className={task.status === 'failed' ? 'download-error' : ''}>{translate('任务未完成')}</span> : null}
                 </div>
               </div>
               {!editing ? <div className="download-actions">

@@ -109,7 +109,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       await updateSettings({ homeSourceKey: sourceKey as AppSettings['homeSourceKey'] })
       await loadHome(true)
       setFeedback('')
-      setFeedbackMessage(`首页源已切换为${source.name}`)
+      setFeedbackMessage(`首页源已切换为${circledOrdinal(sites.findIndex((item) => item.key === source.key) + 1)}`)
       return
     }
 
@@ -141,7 +141,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       setName('')
       setUrl('')
       await refreshAll()
-      notify(`已添加「${created.name}」，正在拉取配置…`, 'success')
+      notify(translate('配置已添加，正在拉取…'), 'success')
       await syncSource(created.id)
     } catch (err) {
       notify((err as Error).message, 'danger')
@@ -158,10 +158,10 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
   }
 
   async function remove(source: ConfigSource): Promise<void> {
-    if (!window.confirm(`确定要删除配置源「${source.name}」吗？该操作不影响磁盘上的原始文件。`)) return
+    if (!window.confirm(translate('确定要删除此配置源吗？该操作不影响磁盘上的原始文件。'))) return
     await window.api.sources.remove(source.id)
     await refreshAll()
-    notify(`已删除「${source.name}」`, 'success')
+    notify(translate('配置源已删除'), 'success')
   }
 
   async function saveEdit(): Promise<void> {
@@ -257,14 +257,14 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
         </div>
         <div className="panel">
           <div className="list">
-            {sources.map((source) => (
+            {sources.map((source, index) => (
               <div className="list-row" key={source.id}>
                 <span className={`dot ${source.error ? 'bad' : source.lastSync ? 'ok' : ''}`} />
                 <div className="list-row-main">
-                  <div className="list-row-title">{source.name}</div>
-                  <div className="list-row-sub">{source.kind === 'url' ? source.url : `本地文件 · ${source.url}`}</div>
+                  <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-sub">{source.kind === 'url' ? translate('远程配置') : translate('本地配置')}</div>
                 </div>
-                {source.error ? <span className="tag tag-danger" title={source.error}>{translate("同步失败")}</span> : null}
+                {source.error ? <span className="tag tag-danger">{translate("同步失败")}</span> : null}
                 <span className="tag tag-outline">{source.siteCount}{translate(" 站")}</span>
                 <span className="tag tag-outline">{source.parseCount}{translate(" 解析")}</span>
                 <span className="fs-12 text-3 nowrap">{relativeTime(source.lastSync)}</span>
@@ -394,11 +394,11 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
             <div className="panel" style={{ marginTop: 12 }}>
               <div className="panel-body-pad">
                 <div className="field-hint" style={{ marginBottom: 8 }}>{translate("\n                  内置源\n                ")}</div>
-                {presets.map((preset) => (
+                {presets.map((preset, index) => (
                   <div className="preset-row" key={preset.id}>
                     <div className="grow">
-                      <div className="list-row-title">{preset.name}</div>
-                      <div className="list-row-sub">{preset.desc}</div>
+                      <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                      <div className="list-row-sub">{translate('内置配置')}</div>
                     </div>
                     <span className="tag tag-outline">
                       {preset.siteCount}{translate(" 个站点\n                    ")}</span>
@@ -421,7 +421,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
 
           <div className="panel" style={{ marginTop: 12 }}>
             <div className="list">
-              {sources.map((source) => (
+              {sources.map((source, index) => (
                 <div className="list-row" key={source.id}>
                   <Switch
                     checked={source.enabled}
@@ -433,6 +433,8 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                       <div className="field grow">
                         <input
                           className="input"
+                          type="password"
+                          autoComplete="new-password"
                           value={editing.name}
                           placeholder={translate("名称")}
                           onChange={(e) => setEditing({ ...editing, name: e.target.value })}
@@ -441,6 +443,8 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                       <div className="field grow" style={{ flex: 2 }}>
                         <input
                           className="input"
+                          type="password"
+                          autoComplete="new-password"
                           value={editing.url}
                           onChange={(e) => setEditing({ ...editing, url: e.target.value })}
                         />
@@ -452,12 +456,12 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                     <>
                       <div className="list-row-main">
                         <div className="list-row-title">
-                          <span className="truncate">{source.name}</span>
+                          <span className="truncate">{circledOrdinal(index + 1)}</span>
                           <span className="tag tag-outline">{source.kind === 'url' ? '订阅' : '本地'}</span>
                           {source.error ? <span className="tag tag-danger">{translate("异常")}</span> : null}
                         </div>
-                        <div className="list-row-sub truncate" title={source.url}>
-                          {source.url}
+                        <div className="list-row-sub truncate">
+                          {source.kind === 'url' ? translate('远程配置地址已加密保存') : translate('本地配置路径已加密保存')}
                         </div>
                       </div>
                       <span className="fs-12 text-3 nowrap">{translate("\n                        站点 ")}{source.siteCount}{translate(" · 解析 ")}{source.parseCount}
@@ -667,7 +671,7 @@ function ParseSettingsSection(): JSX.Element {
   }
 
   const remove = async (item: ParseInfo): Promise<void> => {
-    if (!window.confirm(`${translate('删除解析接口')}「${item.name}」${translate('？')}`)) return
+    if (!window.confirm(translate('确定删除此解析接口吗？'))) return
     setList(await window.api.parse.remove(item.url))
     notify(translate('已删除'), 'success')
   }
@@ -687,30 +691,29 @@ function ParseSettingsSection(): JSX.Element {
 
         {list.length ? (
           <div className="list">
-            {list.map((item) => {
+            {list.map((item, index) => {
               const r = results[item.url]
               return (
                 <div className="list-row" key={item.url}>
                   <div className="list-row-main">
                     <div className="list-row-title">
-                      {item.name}
+                      {circledOrdinal(index + 1)}
                       <span className={`tag ${item.origin === 'custom' ? 'tag-accent' : 'tag-outline'}`}>
                         {translate(item.origin === 'custom' ? '手动添加' : '配置里带的')}
                       </span>
                       {item.type === 0 ? <span className="tag tag-warn">{translate("type=0 需浏览器嗅探")}</span> : null}
                     </div>
-                    <div className="list-row-sub mono truncate">{item.url}</div>
                     <div className="list-row-sub">
-                      {item.flags.length ? `${translate('只解析 ')}${item.flags.join(' / ')}` : translate('通配所有线路')}
+                      {item.flags.length ? translate('仅限指定线路') : translate('通配所有线路')}
                       {' · '}
                       {statText(item.stat)}
                     </div>
                     {r ? (
                       <div className={`list-row-sub ${r.ok ? '' : 'text-3'}`}>
                         {r.ok ? (
-                          <span className="mono truncate">✓ {r.ms}{translate("ms 换到 ")}{r.url}</span>
+                          <span className="mono truncate">✓ {r.ms}{translate("ms 解析成功")}</span>
                         ) : (
-                          <span>✗ {r.error}</span>
+                          <span>✗ {translate('解析失败')}</span>
                         )}
                       </div>
                     ) : null}
