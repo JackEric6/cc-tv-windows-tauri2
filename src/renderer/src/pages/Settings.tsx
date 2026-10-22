@@ -109,7 +109,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
       await updateSettings({ homeSourceKey: sourceKey as AppSettings['homeSourceKey'] })
       await loadHome(true)
       setFeedback('')
-      setFeedbackMessage(`首页源已切换为${circledOrdinal(sites.findIndex((item) => item.key === source.key) + 1)}`)
+      setFeedbackMessage(`${translate('首页已切换到')}${translate('片源')}${circledOrdinal(sites.findIndex((item) => item.key === source.key) + 1)}`)
       return
     }
 
@@ -261,7 +261,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
               <div className="list-row" key={source.id}>
                 <span className={`dot ${source.error ? 'bad' : source.lastSync ? 'ok' : ''}`} />
                 <div className="list-row-main">
-                  <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
                   <div className="list-row-sub">{source.kind === 'url' ? translate('远程配置') : translate('本地配置')}</div>
                 </div>
                 {source.error ? <span className="tag tag-danger">{translate("同步失败")}</span> : null}
@@ -397,7 +397,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                 {presets.map((preset, index) => (
                   <div className="preset-row" key={preset.id}>
                     <div className="grow">
-                      <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                      <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
                       <div className="list-row-sub">{translate('内置配置')}</div>
                     </div>
                     <span className="tag tag-outline">
@@ -456,7 +456,7 @@ export function Settings({ onUpdateFound }: SettingsProps): JSX.Element {
                     <>
                       <div className="list-row-main">
                         <div className="list-row-title">
-                          <span className="truncate">{circledOrdinal(index + 1)}</span>
+                          <span className="truncate">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</span>
                           <span className="tag tag-outline">{source.kind === 'url' ? '订阅' : '本地'}</span>
                           {source.error ? <span className="tag tag-danger">{translate("异常")}</span> : null}
                         </div>
@@ -697,7 +697,7 @@ function ParseSettingsSection(): JSX.Element {
                 <div className="list-row" key={item.url}>
                   <div className="list-row-main">
                     <div className="list-row-title">
-                      {circledOrdinal(index + 1)}
+                      {translate('解析编号前缀')}{circledOrdinal(index + 1)}
                       <span className={`tag ${item.origin === 'custom' ? 'tag-accent' : 'tag-outline'}`}>
                         {translate(item.origin === 'custom' ? '手动添加' : '配置里带的')}
                       </span>
@@ -882,12 +882,12 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
               value={settings.homeSourceKey}
               onChange={(event) => void saveHomeSource(event.target.value as AppSettings['homeSourceKey'])}
             >
-              <option value="guazi">{circledOrdinal(sourceOrdinal('guazi')!)}</option>
-              <option value="xgzy">{circledOrdinal(sourceOrdinal('xgzy')!)}</option>
-              <option value="dyttzy">{circledOrdinal(sourceOrdinal('dyttzy')!)}</option>
-              <option value="ffzy">{circledOrdinal(sourceOrdinal('ffzy')!)}</option>
-              <option value="lzi">{circledOrdinal(sourceOrdinal('lzi')!)}</option>
-              <option value="bfzy">{circledOrdinal(sourceOrdinal('bfzy')!)}</option>
+              <option value="guazi">{translate('片源')}{circledOrdinal(sourceOrdinal('guazi')!)}</option>
+              <option value="xgzy">{translate('片源')}{circledOrdinal(sourceOrdinal('xgzy')!)}</option>
+              <option value="dyttzy">{translate('片源')}{circledOrdinal(sourceOrdinal('dyttzy')!)}</option>
+              <option value="ffzy">{translate('片源')}{circledOrdinal(sourceOrdinal('ffzy')!)}</option>
+              <option value="lzi">{translate('片源')}{circledOrdinal(sourceOrdinal('lzi')!)}</option>
+              <option value="bfzy">{translate('片源')}{circledOrdinal(sourceOrdinal('bfzy')!)}</option>
             </select>
             <div className="field-hint">{translate("选择后立即刷新首页片单")}</div>
           </div>

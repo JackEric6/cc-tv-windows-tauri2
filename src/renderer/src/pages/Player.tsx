@@ -1612,7 +1612,7 @@ export function Player({
           {detail.vod_name}
         </span>
         <span className="text-3 fs-12">
-          {circledOrdinal(lineIndex + 1)} · {episode.name}
+          {translate('线路')}{circledOrdinal(lineIndex + 1)} · {episode.name}
         </span>
         {!isFullscreen ? (
           <button
@@ -2018,7 +2018,7 @@ export function Player({
               epName: episode.name,
               epIndex,
               epTotal: episodes.length,
-              lineName: circledOrdinal(lineIndex + 1)
+              lineName: `${translate('线路')}${circledOrdinal(lineIndex + 1)}`
             }}
           />
         </div>
@@ -2028,7 +2028,7 @@ export function Player({
             <Poster src={detail.vod_pic} name={detail.vod_name} className="poster-side" />
             <div>
               <div className="player-side-title">{detail.vod_name}</div>
-              <div className="text-3 fs-12">{circledOrdinal(lineIndex + 1)}</div>
+              <div className="text-3 fs-12">{translate('线路')}{circledOrdinal(lineIndex + 1)}</div>
               <div className="text-3 fs-12">{translate("\n                第 ")}{epIndex + 1} / {episodes.length}{translate(" 集\n              ")}</div>
             </div>
           </div>
@@ -2042,10 +2042,10 @@ export function Player({
                     key={`${item.name}-${index}`}
                     type="button"
                     className={`chip chip-source${index === lineIndex ? ' active' : ''}`}
-                    title={`${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
+                    title={`${translate('线路')}${circledOrdinal(index + 1)} · ${item.episodes.length} 集`}
                     onClick={() => navigateToLine(index)}
                   >
-                    {circledOrdinal(index + 1)}
+                    {translate('线路')}{circledOrdinal(index + 1)}
                   </button>
                 ))}
               </div>
@@ -2070,7 +2070,7 @@ export function Player({
                       className="chip chip-source active"
                       title={translate('正在看')}
                     >
-                      {label}
+                      {translate('片源')}{label}
                     </span>
                   ) : (
                     <Link
@@ -2080,7 +2080,7 @@ export function Player({
                       to={`/play/${encodeURIComponent(v.siteKey)}/${encodeURIComponent(v.vod_id)}/0/0`}
                       state={playerRouteState}
                     >
-                      {label}
+                      {translate('片源')}{label}
                     </Link>
                   )
                 })}

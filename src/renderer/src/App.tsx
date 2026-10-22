@@ -218,7 +218,7 @@ function FirstRun(): JSX.Element {
             {presets.map((preset, index) => (
               <div className="preset-row" key={preset.id}>
                 <div className="grow">
-                  <div className="list-row-title">{circledOrdinal(index + 1)}</div>
+                  <div className="list-row-title">{translate('配置编号前缀')}{circledOrdinal(index + 1)}</div>
                   <div className="list-row-sub">{translate('已加密的推荐配置')}</div>
                 </div>
                 <span className="tag tag-outline">

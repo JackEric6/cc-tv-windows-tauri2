@@ -77,7 +77,7 @@ export function Library(): JSX.Element {
                   {item.score ? <span className="vod-card-score">{item.score}</span> : null}
                 </div>
                 <div className="vod-card-tags">
-                  <span className="tag tag-outline source-ordinal">{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
+                  <span className="tag tag-outline source-ordinal">{translate('片源')}{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost"
@@ -134,7 +134,7 @@ export function Library(): JSX.Element {
                 <div className="history-sub">
                   {item.epName ? <span>{translate("看到 ")}{item.epName}</span> : <span>{translate("第 ")}{item.epIndex + 1}{translate(" 集")}</span>}
                   <span className="text-3">·</span>
-                  <span className="text-3">{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
+                  <span className="text-3">{translate('片源')}{sourceDisplayLabel(item.siteKey, item.siteName)}</span>
                   <span className="text-3">·</span>
                   <span className="text-3">{relativeTime(item.updatedAt)}</span>
                 </div>
@@ -160,10 +160,10 @@ export function Library(): JSX.Element {
                           type="button"
                           key={key}
                           className={`chip${key === altKey ? ' active' : ''}`}
-                          title={`${circledOrdinal(ordinal)} · 看到 ${alt.epName || `第 ${alt.epIndex + 1} 集`} · ${relativeTime(alt.updatedAt)}`}
+                          title={`${translate('片源')}${circledOrdinal(ordinal)} · 看到 ${alt.epName || `第 ${alt.epIndex + 1} 集`} · ${relativeTime(alt.updatedAt)}`}
                           onClick={() => setPick((p) => ({ ...p, [group.key]: key }))}
                         >
-                          <span className="source-ordinal">{circledOrdinal(ordinal)}</span>
+                          <span className="source-ordinal">{translate('片源')}{circledOrdinal(ordinal)}</span>
                         </button>
                       )
                     })}

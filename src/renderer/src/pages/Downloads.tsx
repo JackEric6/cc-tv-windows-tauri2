@@ -178,7 +178,7 @@ export function Downloads(): JSX.Element {
               ) : null}
               <div className="download-main">
                 <div className="download-title">{task.movieName}</div>
-                <div className="download-sub">{task.episodeName} <span>·</span> {sourceDisplayLabel(task.siteKey, task.siteName)}</div>
+                <div className="download-sub">{task.episodeName} <span>·</span> {translate('片源')}{sourceDisplayLabel(task.siteKey, task.siteName)}</div>
                 {task.status === 'downloading' || task.status === 'queued' ? (
                   <div className="download-progress" aria-label={`${task.progress}%`}>
                     <span style={{ width: `${task.progress}%` }} />

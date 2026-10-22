@@ -1,10 +1,10 @@
 import { createReadStream, createWriteStream } from 'node:fs'
-import { open, rm } from 'node:fs/promises'
+import { open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable, Transform } from 'node:stream'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { networkFetch } from './http'
 import { decryptSensitiveCompressedJson } from './sensitiveData'
 
@@ -272,16 +272,27 @@ async function fastestReleaseDownloadRoutes(originalUrl: string, expectedSize: n
   return [...rankedTested, ...failedTested, ...untestedRoutes]
 }
 
-async function fetchReleaseAsset(urls: string[], expectedSize: number, signal: AbortSignal): Promise<Response> {
+async function fetchReleaseAsset(urls: string[], expectedSize: number, signal: AbortSignal, resumeAt = 0): Promise<Response> {
   let lastError: Error | undefined
   for (const url of urls) {
     try {
       const response = await networkFetch(url, {
-        headers: { 'Accept-Encoding': 'identity' },
+        headers: {
+          'Accept-Encoding': 'identity',
+          ...(resumeAt > 0 ? { Range: `bytes=${resumeAt}-` } : {})
+        },
         signal: AbortSignal.any([signal, AbortSignal.timeout(DOWNLOAD_ROUTE_ATTEMPT_TIMEOUT_MS)])
       })
       const lengthHeader = response.headers.get('content-length')
       const contentLength = lengthHeader ? Number(lengthHeader) : Number.NaN
+      if (resumeAt > 0 && response.status === 206 && response.body) {
+        const range = /^bytes\s+(\d+)-(\d+)\/(\d+)$/i.exec(response.headers.get('content-range') ?? '')
+        if (range && Number(range[1]) === resumeAt && Number(range[2]) + 1 === expectedSize && Number(range[3]) === expectedSize &&
+          (!Number.isFinite(contentLength) || contentLength === expectedSize - resumeAt)) return response
+        lastError = new Error('续传响应范围校验失败')
+        await response.body.cancel().catch(() => undefined)
+        continue
+      }
       if (response.ok && response.body && (!Number.isFinite(contentLength) || contentLength === expectedSize)) return response
       await response.body?.cancel().catch(() => undefined)
       if (response.ok) {
@@ -304,9 +315,22 @@ async function downloadSequentialAsset(
 ): Promise<void> {
   const timeout = createDownloadTimeout()
   try {
-    const response = await fetchReleaseAsset([url], expectedSize, timeout.signal)
+    let resumeAt = 0
+    try {
+      const existing = await open(outputPath, 'r')
+      try {
+        const size = (await existing.stat()).size
+        if (size > 0 && size < expectedSize) resumeAt = size
+      } finally {
+        await existing.close()
+      }
+    } catch {
+      resumeAt = 0
+    }
+    const response = await fetchReleaseAsset([url], expectedSize, timeout.signal, resumeAt)
     if (!response.body) throw new Error(`HTTP ${response.status}`)
-    let downloaded = 0
+    const append = resumeAt > 0 && response.status === 206
+    let downloaded = append ? resumeAt : 0
     const progress = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         timeout.touch()
@@ -318,7 +342,7 @@ async function downloadSequentialAsset(
     await pipeline(
       Readable.fromWeb(response.body as import('node:stream/web').ReadableStream),
       progress,
-      createWriteStream(outputPath, { flags: 'w' })
+      createWriteStream(outputPath, { flags: append ? 'a' : 'w' })
     )
   } finally {
     timeout.close()
@@ -340,19 +364,45 @@ async function downloadRangedAsset(
   expectedSize: number,
   onProgress: (downloaded: number, total: number) => void
 ): Promise<void> {
-  const file = await open(outputPath, 'w+')
+  const statePath = `${outputPath}.ranges.json`
+  const stateTempPath = `${statePath}.tmp`
+  const rangeCount = Math.ceil(expectedSize / DOWNLOAD_RANGE_CHUNK_BYTES)
+  let completed = new Set<number>()
+  try {
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as { size?: number; completed?: unknown }
+    const stat = await open(outputPath, 'r').then((handle) => handle.stat().finally(() => handle.close()))
+    if (state.size === expectedSize && Array.isArray(state.completed) && stat.size === expectedSize) {
+      completed = new Set(state.completed.filter((index): index is number => Number.isInteger(index) && index >= 0 && index < rangeCount))
+    }
+  } catch {
+    completed.clear()
+  }
+  const file = await open(outputPath, completed.size ? 'r+' : 'w+')
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('分段下载超时')), DOWNLOAD_RANGE_TIMEOUT_MS)
-  let downloaded = 0
+  let downloaded = [...completed].reduce((total, index) => {
+    const start = index * DOWNLOAD_RANGE_CHUNK_BYTES
+    return total + Math.min(expectedSize, start + DOWNLOAD_RANGE_CHUNK_BYTES) - start
+  }, 0)
+  let stateWrites = Promise.resolve()
+  const persistState = (): Promise<void> => {
+    const snapshot = JSON.stringify({ size: expectedSize, completed: [...completed].sort((a, b) => a - b) })
+    stateWrites = stateWrites.then(async () => {
+      await writeFile(stateTempPath, snapshot, 'utf8')
+      await rename(stateTempPath, statePath)
+    })
+    return stateWrites
+  }
   try {
     await file.truncate(expectedSize)
-    const ranges = Array.from({ length: Math.ceil(expectedSize / DOWNLOAD_RANGE_CHUNK_BYTES) }, (_, index) => {
+    const ranges = Array.from({ length: rangeCount }, (_, index) => {
       const start = index * DOWNLOAD_RANGE_CHUNK_BYTES
       const end = Math.min(expectedSize, start + DOWNLOAD_RANGE_CHUNK_BYTES) - 1
-      return { start, end }
-    })
+      return { index, start, end }
+    }).filter(({ index }) => !completed.has(index))
+    onProgress(downloaded, expectedSize)
     let nextRange = 0
-    const downloadRange = async ({ start, end }: { start: number; end: number }): Promise<void> => {
+    const downloadRange = async ({ index, start, end }: { index: number; start: number; end: number }): Promise<void> => {
       const requestTimeout = createDownloadTimeout(controller.signal)
       try {
         const response = await networkFetch(url, {
@@ -386,6 +436,8 @@ async function downloadRangedAsset(
           await reader.cancel().catch(() => undefined)
         }
         if (position !== end + 1) throw new Error('分段下载数据不完整')
+        completed.add(index)
+        await persistState()
       } catch (error) {
         controller.abort(error)
         throw error
@@ -402,6 +454,7 @@ async function downloadRangedAsset(
     const results = await Promise.allSettled(workers)
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     if (failure) throw failure.reason
+    await stateWrites
   } finally {
     clearTimeout(timeout)
     await file.close()
@@ -463,7 +516,7 @@ async function getLatestRelease(): Promise<LatestReleaseInfo> {
     throw new Error('GitHub 未提供安装包 SHA-256 校验值')
   }
   const result: LatestReleaseInfo = {
-    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.31',
+    currentVersion: process.env['CCTV_APP_VERSION'] || '1.0.32',
     latestVersion,
     notes: typeof release.body === 'string' ? release.body.slice(0, 4000) : '',
     assetName,
@@ -491,39 +544,64 @@ export async function downloadUpdate(version: string, onProgress: (downloaded: n
   if (version !== release.latestVersion || compareVersions(release.latestVersion, release.currentVersion) <= 0) {
     throw new Error('更新版本已变化，请重新检查更新')
   }
-  const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}-${randomUUID()}.exe`
+  const filename = `cc-tv-windows-tauri2-update-${release.latestVersion}.exe`
   const outputPath = join(tmpdir(), filename)
+  const partialPath = `${outputPath}.part`
   const downloadRoutes = await fastestReleaseDownloadRoutes(release.downloadUrl, release.assetSize)
+  let hasRangedResumeState = false
+  try {
+    await readFile(`${partialPath}.ranges.json`, 'utf8')
+    hasRangedResumeState = true
+  } catch {
+    hasRangedResumeState = false
+  }
   let lastError: Error | undefined
   for (const route of downloadRoutes) {
     try {
-      if (route.rangeSupported) {
+      if (route.rangeSupported || hasRangedResumeState) {
         try {
-          await downloadRangedAsset(route.url, outputPath, release.assetSize, onProgress)
-        } catch {
-          await rm(outputPath, { force: true }).catch(() => undefined)
-          await downloadSequentialAsset(route.url, outputPath, release.assetSize, onProgress)
+          await downloadRangedAsset(route.url, partialPath, release.assetSize, onProgress)
+          hasRangedResumeState = true
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+          try {
+            await readFile(`${partialPath}.ranges.json`, 'utf8')
+            hasRangedResumeState = true
+          } catch {
+            hasRangedResumeState = false
+          }
+          continue
         }
       } else {
-        await downloadSequentialAsset(route.url, outputPath, release.assetSize, onProgress)
+        await downloadSequentialAsset(route.url, partialPath, release.assetSize, onProgress)
       }
-      const file = await open(outputPath, 'r')
+      const file = await open(partialPath, 'r')
+      let integrityError: Error | undefined
       try {
         const signature = Buffer.alloc(2)
         await file.read(signature, 0, 2, 0)
         const info = await file.stat()
         if (signature.toString('ascii') !== 'MZ' || info.size !== release.assetSize) {
-          throw new Error('下载的安装包校验失败')
+          integrityError = new Error('下载的安装包校验失败')
+        } else {
+          const hash = createHash('sha256')
+          for await (const chunk of createReadStream(partialPath)) hash.update(chunk)
+          if (hash.digest('hex') !== release.digest) integrityError = new Error('下载的安装包 SHA-256 校验失败')
         }
-        const hash = createHash('sha256')
-        for await (const chunk of createReadStream(outputPath)) hash.update(chunk)
-        if (hash.digest('hex') !== release.digest) throw new Error('下载的安装包 SHA-256 校验失败')
       } finally {
         await file.close()
       }
+      if (integrityError) {
+        await rm(partialPath, { force: true }).catch(() => undefined)
+        await rm(`${partialPath}.ranges.json`, { force: true }).catch(() => undefined)
+        throw integrityError
+      }
+      await rm(outputPath, { force: true })
+      await rename(partialPath, outputPath)
+      await rm(`${partialPath}.ranges.json`, { force: true }).catch(() => undefined)
+      await rm(`${partialPath}.ranges.json.tmp`, { force: true }).catch(() => undefined)
       return outputPath
     } catch (error) {
-      await rm(outputPath, { force: true }).catch(() => undefined)
       lastError = error instanceof Error ? error : new Error(String(error))
     }
   }

@@ -28,7 +28,7 @@ export function Sites(): JSX.Element {
     try {
       await setSiteEnabled(site.key, enabled)
     } catch (err) {
-      notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
+      notify(`${translate('接口')}${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
       await refreshSites().catch(() => undefined)
     }
   }
@@ -41,7 +41,7 @@ export function Sites(): JSX.Element {
     try {
       await setSiteAreaEnabled(site.key, area, enabled)
     } catch (err) {
-      notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
+      notify(`${translate('接口')}${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)} 设置失败`, 'danger')
       await refreshSites().catch(() => undefined)
     }
   }
@@ -59,7 +59,7 @@ export function Sites(): JSX.Element {
       if (onlyEnabled && !s.enabled) return false
       if (!k) return true
       return (
-        circledOrdinal(sites.findIndex((item) => item.key === s.key) + 1).includes(k)
+        `${translate('接口')}${circledOrdinal(sites.findIndex((item) => item.key === s.key) + 1)}`.includes(k)
       )
     })
   }, [sites, kw, typeFilter, onlyEnabled])
@@ -72,7 +72,7 @@ export function Sites(): JSX.Element {
         ...h,
         [site.key]: { ok: result.ok, text: result.ok ? `${result.ms}ms` : translate('测试失败') }
       }))
-      if (!result.ok) notify(`${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)}：${translate('测试失败')}`, 'warn')
+      if (!result.ok) notify(`${translate('接口')}${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)}：${translate('测试失败')}`, 'warn')
     } finally {
       setTesting((t) => {
         const next = { ...t }
@@ -169,7 +169,7 @@ export function Sites(): JSX.Element {
         <div className="list">
           {filtered.map((site) => {
             const h = health[site.key]
-            const ordinal = circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)
+            const ordinal = `${translate('接口')}${circledOrdinal(sites.findIndex((item) => item.key === site.key) + 1)}`
             return (
               <div className="list-row" key={site.key}>
                 <Switch

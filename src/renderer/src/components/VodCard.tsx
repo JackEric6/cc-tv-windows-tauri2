@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import type { Vod } from '@shared/types'
 import { Poster } from '@/components/Poster'
 import { androidSearchPriority, sourceDisplayLabel } from '@shared/searchSourcePolicy'
+import { translate } from '@/i18n'
 
 /**
  * 一张影片卡。搜索结果和首页内容位共用。
@@ -47,11 +48,11 @@ export function VodCard({
           <Link
             key={`${source.siteKey}-${source.vod_id}`}
             className="tag tag-outline vod-card-source"
-            title={`查看片源 ${sourceDisplayLabel(source.siteKey, source.siteName, index + 1)}`}
+            title={`查看${translate('片源')}${sourceDisplayLabel(source.siteKey, source.siteName, index + 1)}`}
             to={`/play/${encodeURIComponent(source.siteKey)}/${encodeURIComponent(source.vod_id)}/0/0`}
             state={{ playbackReturnTo: returnTo, autoPlay: true }}
           >
-            {sourceDisplayLabel(source.siteKey, source.siteName, index + 1)}
+            {translate('片源')}{sourceDisplayLabel(source.siteKey, source.siteName, index + 1)}
           </Link>
         ))}
       </div>
