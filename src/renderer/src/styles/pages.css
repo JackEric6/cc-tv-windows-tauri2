@@ -362,7 +362,9 @@
 }
 
 .ordinal-label-value {
-  font-family: var(--font-num);
+  font-family: inherit;
+  font-size: 1em;
+  font-weight: inherit;
 }
 
 .chip:hover {
