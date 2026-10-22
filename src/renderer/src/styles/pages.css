@@ -1488,6 +1488,21 @@
   padding: 0;
 }
 
+.player-stage .video-js .player-inline-clock {
+  order: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 36px;
+  margin: 0 2px;
+  color: rgba(255, 255, 255, .78);
+  font-size: 12px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .player-stage .video-js.vjs-theme-city .vjs-remaining-time {
   display: none;
 }
