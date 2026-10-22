@@ -93,6 +93,7 @@ const english: Record<string, string> = {
   '选择片源': 'Select source',
   '线路': 'Line',
   '片源': 'Source',
+  '站点': 'Site ',
   '配置编号前缀': 'Config ',
   '解析编号前缀': 'Parser ',
   '站点编号前缀': 'Site ',

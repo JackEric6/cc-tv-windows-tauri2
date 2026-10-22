@@ -344,9 +344,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  height: 1.2em;
   line-height: 1;
   font-size: 13px;
   font-variant-numeric: normal;
+  vertical-align: middle;
+}
+
+.source-ordinal-prefix,
+.source-ordinal-number {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.source-ordinal-number {
+  height: 1.2em;
 }
 
 .chip:hover {
@@ -2732,6 +2745,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  line-height: 1;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

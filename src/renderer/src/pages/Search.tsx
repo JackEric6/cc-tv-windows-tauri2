@@ -326,7 +326,10 @@ export function Search(): JSX.Element {
               title={r.ok ? `${translate('用时 ')}${r.ms}ms` : translate('该站点未返回结果')}
             >
               <span className={`dot ${r.ok && r.list.length ? 'ok' : r.ok ? '' : 'bad'}`} />
-              <span className="source-ordinal">{translate('站点编号前缀')}{sourceDisplayLabel(r.siteKey, r.siteName, sourceWithPosterFallback.findIndex((item) => item.siteKey === r.siteKey) + 1)}</span>
+              <span className="source-ordinal">
+                <span className="source-ordinal-prefix">{translate('站点')}</span>
+                <span className="source-ordinal-number">{sourceDisplayLabel(r.siteKey, r.siteName, sourceWithPosterFallback.findIndex((item) => item.siteKey === r.siteKey) + 1)}</span>
+              </span>
               <span className="chip-count">{r.list.length}</span>
             </button>
           ))}
@@ -386,7 +389,12 @@ export function Search(): JSX.Element {
             {failedSites.map((r) => (
               <div className="list-row" key={r.siteKey}>
                 <div className="list-row-main">
-                  <div className="list-row-title">{translate('站点编号前缀')}{sourceDisplayLabel(r.siteKey, r.siteName, failedSites.findIndex((item) => item.siteKey === r.siteKey) + 1)}</div>
+                  <div className="list-row-title">
+                    <span className="source-ordinal">
+                      <span className="source-ordinal-prefix">{translate('站点')}</span>
+                      <span className="source-ordinal-number">{sourceDisplayLabel(r.siteKey, r.siteName, failedSites.findIndex((item) => item.siteKey === r.siteKey) + 1)}</span>
+                    </span>
+                  </div>
                   <div className="list-row-sub">{translate('该站点未返回结果')}</div>
                 </div>
               </div>
