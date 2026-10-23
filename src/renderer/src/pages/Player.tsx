@@ -2127,6 +2127,7 @@ export function Player({
             )}
           </div>
 
+          <div className="player-side-label">{translate('选集')}</div>
           <div className="player-episodes">
             {episodes.map((ep) => (
               <button
