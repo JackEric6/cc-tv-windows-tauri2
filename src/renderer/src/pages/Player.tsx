@@ -36,12 +36,14 @@ const KEYBOARD_SEEK_TAP_THRESHOLD_MS = 250
 const KEYBOARD_SEEK_RATE_SECONDS_PER_SECOND = 40
 const KEYBOARD_SEEK_ACCELERATION_SECONDS_PER_SECOND_SQUARED = 48
 const KEYBOARD_SEEK_UPDATE_INTERVAL_MS = 33
-const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
+const PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v3'
+const PREVIOUS_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v2'
 const LEGACY_PLAYER_SKIP_MARKERS_STORAGE_KEY = 'cc-tv.player-skip-markers.v1'
 
-type SkipMarkerKey = 'introSkipSeconds' | 'outroSkipAtSeconds'
+type SkipMarkerKey = 'introSkipSeconds' | 'outroSkipRemainingSeconds'
 type SavedSkipMarkers = Record<string, Partial<Record<SkipMarkerKey, number>>>
 type LegacySkipMarkers = Record<string, Partial<Record<'introSkipSeconds' | 'outroSkipSeconds', number>>>
+type PreviousSkipMarkers = Record<string, Partial<Record<'outroSkipAtSeconds', number>>>
 
 function getKeyboardSeekTarget(start: number, direction: number, elapsedMs: number, limit: number): number {
   const elapsedSeconds = Math.max(0, elapsedMs / 1000)
@@ -60,12 +62,29 @@ function readSkipMarkers(): SavedSkipMarkers {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
     return Object.fromEntries(Object.entries(parsed).flatMap(([key, marker]) => {
       if (!marker || typeof marker !== 'object' || Array.isArray(marker)) return []
-      const valid = Object.fromEntries((['introSkipSeconds', 'outroSkipAtSeconds'] as const).flatMap((field) => {
+      const valid = Object.fromEntries((['introSkipSeconds', 'outroSkipRemainingSeconds'] as const).flatMap((field) => {
         const seconds = (marker as Record<string, unknown>)[field]
         return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? [[field, Math.floor(seconds)]] : []
       }))
       return Object.keys(valid).length ? [[key, valid]] : []
     })) as SavedSkipMarkers
+  } catch {
+    return {}
+  }
+}
+
+function readPreviousSkipMarkers(): PreviousSkipMarkers {
+  try {
+    const value = localStorage.getItem(PREVIOUS_PLAYER_SKIP_MARKERS_STORAGE_KEY)
+    const parsed: unknown = value ? JSON.parse(value) : {}
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).flatMap(([key, marker]) => {
+      if (!marker || typeof marker !== 'object' || Array.isArray(marker)) return []
+      const seconds = (marker as Record<string, unknown>).outroSkipAtSeconds
+      return typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0
+        ? [ [key, { outroSkipAtSeconds: Math.floor(seconds) }] ]
+        : []
+    })) as PreviousSkipMarkers
   } catch {
     return {}
   }
@@ -275,6 +294,9 @@ export function Player({
   const [legacySkipMarkers] = useState<LegacySkipMarkers>(readLegacySkipMarkers)
   const legacySkipMarkersRef = useRef(legacySkipMarkers)
   legacySkipMarkersRef.current = legacySkipMarkers
+  const [previousSkipMarkers] = useState<PreviousSkipMarkers>(readPreviousSkipMarkers)
+  const previousSkipMarkersRef = useRef(previousSkipMarkers)
+  previousSkipMarkersRef.current = previousSkipMarkers
   const migratedSkipMarkersRef = useRef(new Set<string>())
   const resumeRecord = useMemo(() => history
     .flatMap((group) => group.items)
@@ -379,11 +401,11 @@ export function Player({
     ?.vod_pic || '', [detail?.vod_name, detail?.vod_pic, searchResults])
   const skipMarkerKey = `${siteKey}::${vodId}`
   const savedOutroMarker = savedSkipMarkers[skipMarkerKey]
-  const hasSavedOutroMarker = savedOutroMarker && Object.prototype.hasOwnProperty.call(savedOutroMarker, 'outroSkipAtSeconds')
+  const hasSavedOutroMarker = savedOutroMarker && Object.prototype.hasOwnProperty.call(savedOutroMarker, 'outroSkipRemainingSeconds')
   const currentSkipMarkers = {
     introSkipSeconds: savedSkipMarkers[skipMarkerKey]?.introSkipSeconds ??
       legacySkipMarkers[skipMarkerKey]?.introSkipSeconds ?? settings?.introSkipSeconds ?? 0,
-    outroSkipAtSeconds: savedOutroMarker?.outroSkipAtSeconds ?? 0,
+    outroSkipRemainingSeconds: savedOutroMarker?.outroSkipRemainingSeconds ?? 0,
     outroAutoSwitchSeconds: hasSavedOutroMarker ? 0 : settings?.outroSkipSeconds ?? 0
   }
   const currentSkipMarkersRef = useRef(currentSkipMarkers)
@@ -430,13 +452,14 @@ export function Player({
     }
 
     const isIntro = key === 'introSkipSeconds'
-    if ((isIntro && currentTime > duration / 2) || (!isIntro && currentTime < duration / 2)) {
+    const remaining = Math.max(0, Math.floor(duration - currentTime))
+    if ((isIntro && currentTime > duration / 2) || (!isIntro && remaining > duration / 2)) {
       notify(translate(isIntro ? '片头标记需位于视频前半段' : '片尾标记需位于视频后半段'), 'danger')
       return
     }
 
-    const seconds = Math.floor(currentTime)
-    const markerKey = isIntro ? 'introSkipSeconds' : 'outroSkipAtSeconds'
+    const seconds = isIntro ? Math.floor(currentTime) : remaining
+    const markerKey = isIntro ? 'introSkipSeconds' : 'outroSkipRemainingSeconds'
     updateSkipMarker(markerKey, seconds)
     notify(`${translate(isIntro ? '片头' : '片尾')}${translate('已标记：')}${formatMarkerTime(seconds)}`, 'success')
   }, [notify, updateSkipMarker])
@@ -769,14 +792,17 @@ export function Player({
         if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0 &&
           !migratedSkipMarkersRef.current.has(skipMarkerKey)) {
           migratedSkipMarkersRef.current.add(skipMarkerKey)
-          const legacyOutroSeconds = legacySkipMarkersRef.current[skipMarkerKey]?.outroSkipSeconds ?? 0
           const savedMarker = savedSkipMarkersRef.current[skipMarkerKey]
-          const hasOutroMarker = savedMarker && Object.prototype.hasOwnProperty.call(savedMarker, 'outroSkipAtSeconds')
-          if (!hasOutroMarker && legacyOutroSeconds > 0 && legacyOutroSeconds < duration) {
-            const outroAtSeconds = Math.floor(duration - legacyOutroSeconds)
+          const hasOutroMarker = savedMarker && Object.prototype.hasOwnProperty.call(savedMarker, 'outroSkipRemainingSeconds')
+          const previousAtSeconds = previousSkipMarkersRef.current[skipMarkerKey]?.outroSkipAtSeconds
+          const legacyRemainingSeconds = legacySkipMarkersRef.current[skipMarkerKey]?.outroSkipSeconds
+          const remainingSeconds = previousAtSeconds !== undefined
+            ? Math.max(0, Math.floor(duration - previousAtSeconds))
+            : legacyRemainingSeconds
+          if (!hasOutroMarker && remainingSeconds !== undefined && remainingSeconds < duration) {
             setSavedSkipMarkers((current) => ({
               ...current,
-              [skipMarkerKey]: { ...current[skipMarkerKey], outroSkipAtSeconds: outroAtSeconds }
+              [skipMarkerKey]: { ...current[skipMarkerKey], outroSkipRemainingSeconds: remainingSeconds }
             }))
           }
         }
@@ -843,13 +869,13 @@ export function Player({
         save()
         const duration = player.duration()
         const currentTime = player.currentTime()
-        const outroAt = currentSkipMarkersRef.current.outroSkipAtSeconds
+        const outroRemaining = currentSkipMarkersRef.current.outroSkipRemainingSeconds
         const autoSwitchSeconds = currentSkipMarkersRef.current.outroAutoSwitchSeconds
         const outroReached = typeof currentTime === 'number' && Number.isFinite(currentTime) && currentTime > 0 &&
-          (outroAt > 0
-            ? currentTime >= outroAt
-            : autoSwitchSeconds > 0 && typeof duration === 'number' && Number.isFinite(duration) &&
-              duration - currentTime <= autoSwitchSeconds)
+          typeof duration === 'number' && Number.isFinite(duration) && duration > 0 &&
+          (outroRemaining > 0
+            ? duration - currentTime <= outroRemaining
+            : autoSwitchSeconds > 0 && duration - currentTime <= autoSwitchSeconds)
         if (visibleRef.current && !outroTriggered.current && nextEpisodeRef.current >= 0 &&
           typeof duration === 'number' && Number.isFinite(duration) && duration > 0 &&
           outroReached) {
@@ -1731,7 +1757,7 @@ export function Player({
                   <button type="button" className="fullscreen-control" onClick={cyclePlaybackRate} title={translate("切换播放速度")}>{translate("\n                    倍速 ")}{playbackRate}x
                   </button>
                   <SkipMarkerButton label="片头" seconds={currentSkipMarkers.introSkipSeconds} className="fullscreen-control" onMark={() => markSkipPosition('introSkipSeconds')} onClear={() => clearSkipMarker('introSkipSeconds')} />
-                  <SkipMarkerButton label="片尾" seconds={currentSkipMarkers.outroSkipAtSeconds} className="fullscreen-control" onMark={() => markSkipPosition('outroSkipAtSeconds')} onClear={() => clearSkipMarker('outroSkipAtSeconds')} />
+                  <SkipMarkerButton label="片尾" seconds={currentSkipMarkers.outroSkipRemainingSeconds} className="fullscreen-control" onMark={() => markSkipPosition('outroSkipRemainingSeconds')} onClear={() => clearSkipMarker('outroSkipRemainingSeconds')} />
                   <button type="button" className="fullscreen-control" onClick={toggleDanmaku}>
                     {showDanmaku ? '关闭弹幕' : '开启弹幕'}
                   </button>
@@ -1826,7 +1852,7 @@ export function Player({
             >{translate("\n              下一集 ")}<Icon name="chevron-right" size={13} />
             </button>
             <SkipMarkerButton label="片头" seconds={currentSkipMarkers.introSkipSeconds} onMark={() => markSkipPosition('introSkipSeconds')} onClear={() => clearSkipMarker('introSkipSeconds')} />
-            <SkipMarkerButton label="片尾" seconds={currentSkipMarkers.outroSkipAtSeconds} onMark={() => markSkipPosition('outroSkipAtSeconds')} onClear={() => clearSkipMarker('outroSkipAtSeconds')} />
+            <SkipMarkerButton label="片尾" seconds={currentSkipMarkers.outroSkipRemainingSeconds} onMark={() => markSkipPosition('outroSkipRemainingSeconds')} onClear={() => clearSkipMarker('outroSkipRemainingSeconds')} />
             <span className="grow" />
             <button type="button" className="btn btn-sm" disabled={cacheBusy} onClick={() => { setCacheSelection([]); setShowCachePicker(true) }} title={translate("选择剧集加入离线缓存")}>
               {cacheBusy ? <span className="spin" /> : <Icon name="download" size={13} />}{translate(" 缓存\n            ")}</button>
