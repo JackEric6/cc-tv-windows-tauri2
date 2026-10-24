@@ -7,11 +7,22 @@ interface Segment {
   lines: string[]
   uri: string
   duration: number
+  startOffset: number
+  programDateTime: number | null
   durationPrecision: number
   discontinuity: boolean
   markedAd: boolean
   keyState: string
   mapState: string
+}
+
+interface AdDateRange {
+  id: string
+  startOffset: number
+  startDate: number | null
+  endDate: number | null
+  duration: number | null
+  ad: boolean
 }
 
 interface SegmentGroup {
@@ -39,6 +50,52 @@ function extinf(line: string): { duration: number; precision: number } | null {
   return Number.isFinite(duration)
     ? { duration, precision: dot < 0 ? 0 : match[1].length - dot - 1 }
     : null
+}
+
+function attributeList(line: string): Map<string, string> {
+  const attributes = new Map<string, string>()
+  const body = line.slice(line.indexOf(':') + 1)
+  for (const match of body.matchAll(/(?:^|,)\s*([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/gi)) {
+    attributes.set(match[1].toUpperCase(), match[2].replace(/^"|"$/g, '').trim())
+  }
+  return attributes
+}
+
+function secondsAttribute(attributes: Map<string, string>, name: string): number | null {
+  const value = Number(attributes.get(name))
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function isAdDateRange(attributes: Map<string, string>): boolean {
+  const marker = `${attributes.get('ID') ?? ''} ${attributes.get('CLASS') ?? ''}`
+  return AD_URI.test(marker) || attributes.has('SCTE35-OUT') || attributes.has('SCTE35-IN') || attributes.has('X-ASSET-URI')
+}
+
+function isAdMarkerLine(line: string): boolean {
+  if (AD_TAG.test(line) || /^#EXT-X-CUE-(?:OUT|IN)/i.test(line)) return true
+  return /^#EXT-X-DATERANGE:/i.test(line) && isAdDateRange(attributeList(line))
+}
+
+function mergeAdDateRange(ranges: Map<string, AdDateRange>, line: string, startOffset: number): void {
+  if (!/^#EXT-X-DATERANGE:/i.test(line)) return
+  const attributes = attributeList(line)
+  const id = attributes.get('ID')
+  if (!id) return
+  const current = ranges.get(id) ?? {
+    id,
+    startOffset,
+    startDate: null,
+    endDate: null,
+    duration: null,
+    ad: false
+  }
+  const startDate = Date.parse(attributes.get('START-DATE') ?? '')
+  const endDate = Date.parse(attributes.get('END-DATE') ?? '')
+  if (Number.isFinite(startDate)) current.startDate = startDate
+  if (Number.isFinite(endDate)) current.endDate = endDate
+  current.duration = secondsAttribute(attributes, 'DURATION') ?? current.duration
+  current.ad ||= isAdDateRange(attributes)
+  ranges.set(id, current)
 }
 
 function totalUris(lines: string[]): number {
@@ -300,10 +357,29 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   let inAdBreak = false
   let markedAd = false
   let adDiscontinuity = false
+  let cueAdEndOffset: number | null = null
   let cueRemovedCount = 0
+  let elapsed = 0
+  let programDateTime: number | null = null
+  let scteAdStart: number | null = null
+  const adDateRanges = new Map<string, AdDateRange>()
+  const scteAdIntervals: Array<{ start: number; end: number }> = []
 
   for (const raw of lines) {
     const line = raw.trim()
+    if (/^#EXT-X-PROGRAM-DATE-TIME:/i.test(line)) {
+      const timestamp = Date.parse(line.slice(line.indexOf(':') + 1))
+      programDateTime = Number.isFinite(timestamp) ? timestamp : null
+    }
+    mergeAdDateRange(adDateRanges, line, elapsed)
+    if (/^#EXT-X-DATERANGE:/i.test(line)) {
+      const attributes = attributeList(line)
+      if (attributes.has('SCTE35-OUT') && scteAdStart === null) scteAdStart = elapsed
+      if (attributes.has('SCTE35-IN') && scteAdStart !== null) {
+        scteAdIntervals.push({ start: scteAdStart, end: elapsed })
+        scteAdStart = null
+      }
+    }
     if (/^#EXT-X-KEY:/i.test(line)) activeKey = raw
     if (/^#EXT-X-MAP:/i.test(line)) activeMap = raw
 
@@ -313,7 +389,14 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       adDiscontinuity = false
       continue
     }
-    if (line.startsWith('#EXT-X-CUE-OUT')) {
+    if (/^#EXT-X-CUE-OUT(?:-CONT)?(?::|$)/i.test(line)) {
+      const attributes = attributeList(line)
+      const rawDuration = line.match(/^#EXT-X-CUE-OUT:(\s*[\d.]+)/i)?.[1]
+      const duration = secondsAttribute(attributes, 'DURATION') ?? Number(rawDuration)
+      const elapsedTime = secondsAttribute(attributes, 'ELAPSEDTIME') ?? 0
+      if (Number.isFinite(duration) && duration > 0) {
+        cueAdEndOffset = elapsed + Math.max(0, duration - elapsedTime)
+      }
       inAdBreak = true
       pending = []
       continue
@@ -324,8 +407,22 @@ export function purifyM3u8(baseUrl: string, input: string): string {
         inAdBreak = false
       } else if (line && !line.startsWith('#')) {
         cueRemovedCount++
+        const durationInfo = extinf(pending.find((part) => /^\s*#EXTINF:/i.test(part)) ?? '')
+        const duration = durationInfo?.duration ?? 0
+        elapsed += duration
+        if (programDateTime !== null) programDateTime += duration * 1000
+        pending = []
+        if (cueAdEndOffset !== null && elapsed >= cueAdEndOffset) {
+          inAdBreak = false
+          cueAdEndOffset = null
+          pending = adDiscontinuity ? ['#EXT-X-DISCONTINUITY'] : []
+          adDiscontinuity = false
+        }
       } else if (line.startsWith('#EXT-X-DISCONTINUITY')) {
         adDiscontinuity = true
+        pending.push(raw)
+      } else if (line) {
+        pending.push(raw)
       }
       continue
     }
@@ -337,16 +434,21 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       const segmentLines = [...pending, raw]
       const extinfLine = pending.find((part) => /^\s*#EXTINF:/i.test(part)) ?? ''
       const durationInfo = extinf(extinfLine)
+      const duration = durationInfo?.duration ?? 0
       segments.push({
         lines: segmentLines,
         uri: line,
-        duration: durationInfo?.duration ?? 0,
+        duration,
+        startOffset: elapsed,
+        programDateTime,
         durationPrecision: durationInfo?.precision ?? -1,
         discontinuity: pending.some((part) => part.trimStart().startsWith('#EXT-X-DISCONTINUITY')),
         markedAd,
         keyState: activeKey,
         mapState: activeMap
       })
+      elapsed += duration
+      if (programDateTime !== null) programDateTime += duration * 1000
       pending = []
       markedAd = false
       continue
@@ -364,6 +466,29 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   segments.forEach((segment) => {
     if (uriIsAd(segment.uri, baseUrl) || segment.markedAd) remove.add(segment)
   })
+
+  const firstTimedSegment = segments.find((segment) => segment.programDateTime !== null)
+  const overlaps = (segment: Segment, start: number, end: number): boolean =>
+    segment.startOffset < end && segment.startOffset + segment.duration > start
+  for (const range of adDateRanges.values()) {
+    if (!range.ad) continue
+    const duration = range.endDate !== null && range.startDate !== null
+      ? (range.endDate - range.startDate) / 1000
+      : range.duration
+    if (duration === null || duration <= 0) continue
+    let startOffset = range.startOffset
+    if (range.startDate !== null && firstTimedSegment?.programDateTime !== null && firstTimedSegment?.programDateTime !== undefined) {
+      startOffset = firstTimedSegment.startOffset + (range.startDate - firstTimedSegment.programDateTime) / 1000
+    }
+    for (const segment of segments) {
+      if (overlaps(segment, startOffset, startOffset + duration)) remove.add(segment)
+    }
+  }
+  for (const interval of scteAdIntervals) {
+    for (const segment of segments) {
+      if (overlaps(segment, interval.start, interval.end)) remove.add(segment)
+    }
+  }
 
   const hasVodDiscontinuities = lines.some((line) => line.trim() === '#EXT-X-ENDLIST') &&
     lines.some((line) => line.trim().startsWith('#EXT-X-DISCONTINUITY'))
@@ -407,9 +532,14 @@ export function purifyM3u8(baseUrl: string, input: string): string {
     if (remove.has(segment)) continue
     keyState = appendState(output, '#EXT-X-KEY', keyState, segment.keyState)
     mapState = appendState(output, '#EXT-X-MAP', mapState, segment.mapState)
-    output.push(...segment.lines.filter((line) => !/^\s*#EXT-X-(?:KEY|MAP):/i.test(line)))
+    output.push(...segment.lines.filter((line) =>
+      !/^\s*#EXT-X-(?:KEY|MAP):/i.test(line) && !isAdMarkerLine(line.trim())
+    ))
   }
-  output.push(...pending.filter((line) => line.trim() === '#EXT-X-ENDLIST' || !AD_TAG.test(line.trim())))
+  output.push(...pending.filter((line) => {
+    const trimmed = line.trim()
+    return trimmed === '#EXT-X-ENDLIST' || !isAdMarkerLine(trimmed)
+  }))
   const normalized = normalizeMediaPlaylist(output)
   if (totalUris(normalized) <= 0 || !normalized.some((line) => /^#EXTM3U/.test(line)) || !isPlayable(normalized)) return input
   const result = normalized.join(eol)
