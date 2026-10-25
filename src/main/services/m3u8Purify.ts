@@ -270,30 +270,6 @@ function removeUniformDurationGroups(segments: Segment[], remove: Set<Segment>, 
   for (const group of removable) for (const segment of group.segments) remove.add(segment)
 }
 
-function medianDuration(segments: Segment[]): number | null {
-  const durations = segments.map((segment) => segment.duration).filter((duration) => duration > 0).sort((a, b) => a - b)
-  if (!durations.length) return null
-  const middle = Math.floor(durations.length / 2)
-  return durations.length % 2 ? durations[middle] : (durations[middle - 1] + durations[middle]) / 2
-}
-
-function isBoundedCadenceOutlier(group: SegmentGroup, index: number, groups: SegmentGroup[]): boolean {
-  if (index === 0 || index === groups.length - 1 || group.segments.length < 3 || group.segments.length > MAX_FRAME_RATE_AD_BLOCK_SIZE) return false
-  const candidateDurations = group.segments.map((segment) => segment.duration).filter((duration) => duration > 0)
-  const candidateMedian = medianDuration(group.segments)
-  if (!candidateMedian || candidateDurations.length !== group.segments.length ||
-    candidateDurations.some((duration) => Math.abs(duration - candidateMedian) > 0.05)) return false
-
-  const before = groups[index - 1].segments.slice(-12)
-  const after = groups[index + 1].segments.slice(0, 12)
-  if (before.length < 3 || after.length < 3) return false
-  const beforeMedian = medianDuration(before)
-  const afterMedian = medianDuration(after)
-  if (beforeMedian === null || afterMedian === null || Math.abs(beforeMedian - afterMedian) > 0.04) return false
-
-  return Math.abs(candidateMedian - (beforeMedian + afterMedian) / 2) >= 0.08
-}
-
 function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>): void {
   const remaining = segments.filter((segment) => !remove.has(segment))
   const groups = buildGroups(remaining)
@@ -310,9 +286,7 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
       (main.totalDuration > 0 && group.totalDuration > 0 && group.totalDuration < main.totalDuration * 0.18)
     const differentHost = Boolean(main.host && group.host && main.host !== group.host)
     const differentPath = Boolean(main.pathPrefix && group.pathPrefix && main.pathPrefix !== group.pathPrefix)
-    const index = groups.indexOf(group)
-    const boundedCadenceOutlier = isBoundedCadenceOutlier(group, index, groups)
-    const adLike = group.adLike || differentHost || (group.segments.length <= 2 && differentPath) || boundedCadenceOutlier
+    const adLike = group.adLike || differentHost || (group.segments.length <= 2 && differentPath)
     if (shortGroup && adLike) for (const segment of group.segments) remove.add(segment)
   }
 }
