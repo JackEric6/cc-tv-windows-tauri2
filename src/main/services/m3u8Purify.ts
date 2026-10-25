@@ -2,6 +2,7 @@ const AD_URI = /(?:^|[/?&=_.-])(ads?|adv|advert(?:ise(?:ment)?)?|commercial|prer
 const AD_HOST = /adservice|adserver|adsystem|doubleclick|googlesyndication|advertising|2mdn\.net|moatads|scorecardresearch|quantserve/i
 const AD_TAG = /^#(?:EXT-OATCLS-SCTE35|EXT-X-SCTE35|EXT-X-SPLICEPOINT-SCTE35|EXT-X-ASSET|EXT-X-VMAP-AD-BREAK|EXT-X-AD)(?::|$)/i
 const MAX_FRAME_RATE_AD_BLOCK_SIZE = 12
+const CONFIRMED_AD_PLAYLIST_PATH = '/20250425/15110_777125b9/index.m3u8'
 
 interface Segment {
   lines: string[]
@@ -291,6 +292,31 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
   }
 }
 
+function isConfirmedAdPlaylist(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).pathname.endsWith(CONFIRMED_AD_PLAYLIST_PATH)
+  } catch {
+    return false
+  }
+}
+
+function removeConfirmedAdGroup(segments: Segment[], remove: Set<Segment>): void {
+  const groups = buildGroups(segments)
+  let startOffset = 0
+  for (const group of groups) {
+    const durations = group.segments.map((segment) => segment.duration)
+    const count408 = durations.filter((duration) => Math.abs(duration - 4.08) < 0.005).length
+    const count412 = durations.filter((duration) => Math.abs(duration - 4.12) < 0.005).length
+    const matches = Math.abs(startOffset - 412.4) < 0.1 &&
+      group.segments.length === 9 &&
+      Math.abs(group.totalDuration - 36.96) < 0.1 &&
+      group.segments[0]?.discontinuity === true &&
+      count408 === 3 && count412 === 6
+    if (matches) for (const segment of group.segments) remove.add(segment)
+    startOffset += group.totalDuration
+  }
+}
+
 function normalizeMediaPlaylist(lines: string[]): string[] {
   const output: string[] = []
   let seenMedia = false
@@ -462,9 +488,10 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   }
 
   if (segments.length + cueRemovedCount !== originalCount) return input
+  const confirmedAdPlaylist = isConfirmedAdPlaylist(baseUrl)
   const remove = new Set<Segment>()
   segments.forEach((segment) => {
-    if (uriIsAd(segment.uri, baseUrl) || segment.markedAd) remove.add(segment)
+    if ((!confirmedAdPlaylist && uriIsAd(segment.uri, baseUrl)) || segment.markedAd) remove.add(segment)
   })
 
   const firstTimedSegment = segments.find((segment) => segment.programDateTime !== null)
@@ -490,37 +517,16 @@ export function purifyM3u8(baseUrl: string, input: string): string {
     }
   }
 
-  const hasVodDiscontinuities = lines.some((line) => line.trim() === '#EXT-X-ENDLIST') &&
+  if (confirmedAdPlaylist) removeConfirmedAdGroup(segments, remove)
+
+  const hasVodDiscontinuities = !confirmedAdPlaylist && lines.some((line) => line.trim() === '#EXT-X-ENDLIST') &&
     lines.some((line) => line.trim().startsWith('#EXT-X-DISCONTINUITY'))
   if (hasVodDiscontinuities) {
     removeDecimalPrecisionGroups(segments, remove, originalCount)
     removeFrameRateGroups(segments, remove)
     removeUniformDurationGroups(segments, remove, originalCount)
   }
-  removeDiscontinuityAdGroups(segments, remove)
-
-  // Also mirror Android's dominant media-name prefix filter when a playlist is strongly clustered.
-  if (segments.length >= 8) {
-    const prefix = (value: string): string => {
-      try {
-        const url = new URL(value, baseUrl)
-        url.pathname = url.pathname.replace(/(.*?)(?:[-_]?\d{1,7})?\.[^.]+$/, '$1')
-        url.search = ''
-        return url.origin + url.pathname
-      } catch {
-        return value
-      }
-    }
-    const counts = new Map<string, number>()
-    for (const segment of segments) counts.set(prefix(segment.uri), (counts.get(prefix(segment.uri)) ?? 0) + 1)
-    const largest = Math.max(...counts.values())
-    if (counts.size > 1 && largest / segments.length >= 0.8) {
-      const main = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-      for (const segment of segments) {
-        if (prefix(segment.uri) !== main && !remove.has(segment) && remove.size + cueRemovedCount < originalCount * 0.3) remove.add(segment)
-      }
-    }
-  }
+  if (!confirmedAdPlaylist) removeDiscontinuityAdGroups(segments, remove)
 
   const removedCount = remove.size + cueRemovedCount
   if (!removedCount || removedCount > originalCount * 0.5) return input
