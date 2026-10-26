@@ -2,7 +2,6 @@ const AD_URI = /(?:^|[/?&=_.-])(ads?|adv|advert(?:ise(?:ment)?)?|commercial|prer
 const AD_HOST = /adservice|adserver|adsystem|doubleclick|googlesyndication|advertising|2mdn\.net|moatads|scorecardresearch|quantserve/i
 const AD_TAG = /^#(?:EXT-OATCLS-SCTE35|EXT-X-SCTE35|EXT-X-SPLICEPOINT-SCTE35|EXT-X-ASSET|EXT-X-VMAP-AD-BREAK|EXT-X-AD)(?::|$)/i
 const MAX_FRAME_RATE_AD_BLOCK_SIZE = 12
-const CONFIRMED_AD_PLAYLIST_PATH = '/20250425/15110_777125b9/index.m3u8'
 
 interface Segment {
   lines: string[]
@@ -292,31 +291,6 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
   }
 }
 
-function isConfirmedAdPlaylist(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl).pathname.endsWith(CONFIRMED_AD_PLAYLIST_PATH)
-  } catch {
-    return false
-  }
-}
-
-function removeConfirmedAdGroup(segments: Segment[], remove: Set<Segment>): void {
-  const groups = buildGroups(segments)
-  let startOffset = 0
-  for (const group of groups) {
-    const durations = group.segments.map((segment) => segment.duration)
-    const count408 = durations.filter((duration) => Math.abs(duration - 4.08) < 0.005).length
-    const count412 = durations.filter((duration) => Math.abs(duration - 4.12) < 0.005).length
-    const matches = Math.abs(startOffset - 412.4) < 0.1 &&
-      group.segments.length === 9 &&
-      Math.abs(group.totalDuration - 36.96) < 0.1 &&
-      group.segments[0]?.discontinuity === true &&
-      count408 === 3 && count412 === 6
-    if (matches) for (const segment of group.segments) remove.add(segment)
-    startOffset += group.totalDuration
-  }
-}
-
 function normalizeMediaPlaylist(lines: string[]): string[] {
   const output: string[] = []
   let seenMedia = false
@@ -488,10 +462,9 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   }
 
   if (segments.length + cueRemovedCount !== originalCount) return input
-  const confirmedAdPlaylist = isConfirmedAdPlaylist(baseUrl)
   const remove = new Set<Segment>()
   segments.forEach((segment) => {
-    if ((!confirmedAdPlaylist && uriIsAd(segment.uri, baseUrl)) || segment.markedAd) remove.add(segment)
+    if (uriIsAd(segment.uri, baseUrl) || segment.markedAd) remove.add(segment)
   })
 
   const firstTimedSegment = segments.find((segment) => segment.programDateTime !== null)
@@ -516,8 +489,6 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       if (overlaps(segment, interval.start, interval.end)) remove.add(segment)
     }
   }
-
-  if (confirmedAdPlaylist) removeConfirmedAdGroup(segments, remove)
 
   // Unmarked discontinuity groups can be normal program content. Do not infer
   // ads from duration, frame-rate, cadence, or group length: those heuristics

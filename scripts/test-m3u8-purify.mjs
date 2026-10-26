@@ -69,14 +69,12 @@ assert.ok(unmarkedUris.some((uri) => /\/113\.ts\?/.test(uri)), 'does not discard
 const confirmedBaseUrl = 'https://cdn.example/20250425/15110_777125b9/index.m3u8'
 const confirmedInput = makeConfirmedAdPlaylist()
 const confirmedUris = getUrisFor(confirmedBaseUrl, confirmedInput)
-assert.equal(confirmedUris.length, 311, 'removes only the nine confirmed inserted-ad segments')
-const confirmedAdUris = new Set(Array.from({ length: 9 }, (_, index) => `https://cdn.example/shared/${103 + index}.ts?sig=opaque`))
-assert.equal(confirmedUris.some((uri) => confirmedAdUris.has(uri)), false, 'removes the confirmed ad group')
-assert.equal(confirmedUris[102], 'https://cdn.example/shared/102.ts?sig=opaque', 'keeps the segment before the ad')
-assert.equal(confirmedUris[103], 'https://cdn.example/shared/112.ts?sig=opaque', 'keeps the first segment after the ad')
+assert.equal(confirmedUris.length, 320, 'preserves unmarked discontinuity content')
+assert.equal(confirmedUris[102], 'https://cdn.example/shared/102.ts?sig=opaque', 'keeps the segment before the discontinuity')
+assert.equal(confirmedUris[103], 'https://cdn.example/shared/103.ts?sig=opaque', 'keeps the first segment after the discontinuity')
 assert.ok(confirmedUris.some((uri) => /\/212\.ts\?/.test(uri)), 'preserves the separate ambiguous discontinuity group')
 
 const sameContentOtherPath = getUrisFor('https://cdn.example/other/index.m3u8', confirmedInput)
 assert.equal(sameContentOtherPath.length, 320, 'preserves the same unmarked segments on other playlists')
 
-console.log('M3U8 purifier regressions passed: explicit and confirmed ad groups are removed; ambiguous content is preserved.')
+console.log('M3U8 purifier regressions passed: explicit ad markers are removed; unmarked content is preserved.')
