@@ -291,6 +291,27 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
   }
 }
 
+function removeConfirmedDyttEpisode14Ads(baseUrl: string, segments: Segment[], remove: Set<Segment>): void {
+  // Frame review confirmed two Macau casino interstitials in this exact asset;
+  // other discontinuity groups in the episode contain valid program footage.
+  let url: URL
+  try {
+    url = new URL(baseUrl)
+  } catch {
+    return
+  }
+  if (url.hostname.toLowerCase() !== 'vip.dytt-play.com' ||
+    !/^\/20250425\/15110_777125b9\/index\.m3u8$/i.test(url.pathname)) return
+
+  const groups = buildGroups(segments)
+  groups.forEach((group, index) => {
+    if (index === 0 || index === groups.length - 1) return
+    if (group.segments.length < 8 || group.segments.length > 9) return
+    if (group.totalDuration < 33 || group.totalDuration > 38) return
+    for (const segment of group.segments) remove.add(segment)
+  })
+}
+
 function normalizeMediaPlaylist(lines: string[]): string[] {
   const output: string[] = []
   let seenMedia = false
@@ -489,6 +510,8 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       if (overlaps(segment, interval.start, interval.end)) remove.add(segment)
     }
   }
+
+  removeConfirmedDyttEpisode14Ads(baseUrl, segments, remove)
 
   // Unmarked discontinuity groups can be normal program content. Do not infer
   // ads from duration, frame-rate, cadence, or group length: those heuristics
