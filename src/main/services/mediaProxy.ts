@@ -30,18 +30,39 @@ type ProxyResponse = Readable & {
   headers: Record<string, string>
 }
 
+const RETRYABLE_UPSTREAM_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 522, 524])
+
+function retryDelay(attempt: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+}
+
 async function fetchUpstream(
   url: string,
   method: string,
   headers: Record<string, string>,
   signal: AbortSignal
 ): Promise<{ response: ProxyResponse; finalUrl: string }> {
-  const upstream = await networkFetch(url, {
-    method,
-    headers: normalizeRequestHeaders(headers),
-    redirect: 'follow',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(30000)])
-  })
+  let upstream: Response | undefined
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (signal.aborted) throw new Error('媒体请求已取消')
+    try {
+      upstream = await networkFetch(url, {
+        method,
+        headers: normalizeRequestHeaders(headers),
+        redirect: 'follow',
+        signal: AbortSignal.any([signal, AbortSignal.timeout(30000)])
+      })
+      if (!RETRYABLE_UPSTREAM_STATUS.has(upstream.status) || attempt === 2) break
+      await upstream.body?.cancel().catch(() => undefined)
+      await retryDelay(attempt)
+    } catch (error) {
+      lastError = error
+      if (signal.aborted || attempt === 2) throw error
+      await retryDelay(attempt)
+    }
+  }
+  if (!upstream) throw (lastError instanceof Error ? lastError : new Error('媒体请求失败'))
   const stream = upstream.body
     ? Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream<Uint8Array>)
     : Readable.from([])
