@@ -69,9 +69,11 @@ assert.ok(unmarkedUris.some((uri) => /\/113\.ts\?/.test(uri)), 'does not discard
 const confirmedBaseUrl = 'https://cdn.example/20250425/15110_777125b9/index.m3u8'
 const confirmedInput = makeConfirmedAdPlaylist()
 const confirmedUris = getUrisFor(confirmedBaseUrl, confirmedInput)
-assert.equal(confirmedUris.length, 320, 'preserves unmarked discontinuity content')
+assert.equal(confirmedUris.length, 319, 'removes only the confirmed bad segment at 06:52.4')
 assert.equal(confirmedUris[102], 'https://cdn.example/shared/102.ts?sig=opaque', 'keeps the segment before the discontinuity')
-assert.equal(confirmedUris[103], 'https://cdn.example/shared/103.ts?sig=opaque', 'keeps the first segment after the discontinuity')
+assert.equal(confirmedUris[103], 'https://cdn.example/shared/104.ts?sig=opaque', 'keeps the segment after the confirmed bad segment')
+assert.ok(confirmedUris.some((uri) => /\/103\.ts\?/.test(uri)) === false, 'removes only the first segment at the reported time')
+assert.ok(confirmedUris.some((uri) => /\/104\.ts\?/.test(uri)), 'keeps the remaining discontinuity group content')
 assert.ok(confirmedUris.some((uri) => /\/212\.ts\?/.test(uri)), 'preserves the separate ambiguous discontinuity group')
 
 const sameContentOtherPath = getUrisFor('https://cdn.example/other/index.m3u8', confirmedInput)
