@@ -2,7 +2,6 @@ const AD_URI = /(?:^|[/?&=_.-])(ads?|adv|advert(?:ise(?:ment)?)?|commercial|prer
 const AD_HOST = /adservice|adserver|adsystem|doubleclick|googlesyndication|advertising|2mdn\.net|moatads|scorecardresearch|quantserve/i
 const AD_TAG = /^#(?:EXT-OATCLS-SCTE35|EXT-X-SCTE35|EXT-X-SPLICEPOINT-SCTE35|EXT-X-ASSET|EXT-X-VMAP-AD-BREAK|EXT-X-AD)(?::|$)/i
 const MAX_FRAME_RATE_AD_BLOCK_SIZE = 12
-const CONFIRMED_PROBLEM_PLAYLIST_PATH = '/20250425/15110_777125b9/index.m3u8'
 
 interface Segment {
   lines: string[]
@@ -131,25 +130,6 @@ function buildGroups(segments: Segment[]): SegmentGroup[] {
   }
   flush()
   return groups
-}
-
-function isConfirmedProblemPlaylist(baseUrl: string): boolean {
-  try {
-    return new URL(baseUrl).pathname.endsWith(CONFIRMED_PROBLEM_PLAYLIST_PATH)
-  } catch {
-    return false
-  }
-}
-
-function removeConfirmedProblemSegment(segments: Segment[], remove: Set<Segment>): void {
-  // The source has no ad marker. The only confirmed bad media is the first
-  // segment at 06:52.4; keep the rest of the discontinuity group intact.
-  const segment = segments.find((candidate) =>
-    candidate.discontinuity &&
-    Math.abs(candidate.startOffset - 412.4) < 0.15 &&
-    Math.abs(candidate.duration - 4.12) < 0.02
-  )
-  if (segment) remove.add(segment)
 }
 
 function segmentLimit(segments: Segment[]): number {
@@ -509,8 +489,6 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       if (overlaps(segment, interval.start, interval.end)) remove.add(segment)
     }
   }
-
-  if (isConfirmedProblemPlaylist(baseUrl)) removeConfirmedProblemSegment(segments, remove)
 
   // Unmarked discontinuity groups can be normal program content. Do not infer
   // ads from duration, frame-rate, cadence, or group length: those heuristics
