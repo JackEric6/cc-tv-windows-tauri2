@@ -519,14 +519,9 @@ export function purifyM3u8(baseUrl: string, input: string): string {
 
   if (confirmedAdPlaylist) removeConfirmedAdGroup(segments, remove)
 
-  const hasVodDiscontinuities = !confirmedAdPlaylist && lines.some((line) => line.trim() === '#EXT-X-ENDLIST') &&
-    lines.some((line) => line.trim().startsWith('#EXT-X-DISCONTINUITY'))
-  if (hasVodDiscontinuities) {
-    removeDecimalPrecisionGroups(segments, remove, originalCount)
-    removeFrameRateGroups(segments, remove)
-    removeUniformDurationGroups(segments, remove, originalCount)
-  }
-  if (!confirmedAdPlaylist) removeDiscontinuityAdGroups(segments, remove)
+  // Unmarked discontinuity groups can be normal program content. Do not infer
+  // ads from duration, frame-rate, cadence, or group length: those heuristics
+  // were responsible for deleting valid segments from real VOD playlists.
 
   const removedCount = remove.size + cueRemovedCount
   if (!removedCount || removedCount > originalCount * 0.5) return input
