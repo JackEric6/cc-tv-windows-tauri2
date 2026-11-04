@@ -1470,7 +1470,7 @@
   gap: 4px;
   padding: 16px 14px 0;
   background-color: transparent;
-  background-image: linear-gradient(to top, rgba(0, 0, 0, .86), rgba(0, 0, 0, .08));
+  background-image: none;
 }
 
 .player-stage .video-js .vjs-progress-control .vjs-progress-holder {
@@ -2052,21 +2052,30 @@
   width: 160px;
   transform: translateX(-50%);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .78);
+  border: 0;
   border-radius: 4px;
   background: #080a0e;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, .42);
   color: #fff;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity .06s ease, visibility 0s linear .06s;
+  box-shadow: none !important;
+  filter: none !important;
+  transition: none !important;
 }
 
 .player-progress-preview.visible {
   opacity: 1;
   visibility: visible;
-  transition-delay: 0s;
+}
+
+.player-stage,
+.player-stage *,
+.player-progress-preview,
+.player-progress-preview * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
 }
 
 .player-progress-preview.is-fullscreen {
