@@ -7,11 +7,22 @@ interface Segment {
   lines: string[]
   uri: string
   duration: number
+  startOffset: number
+  programDateTime: number | null
   durationPrecision: number
   discontinuity: boolean
   markedAd: boolean
   keyState: string
   mapState: string
+}
+
+interface AdDateRange {
+  id: string
+  startOffset: number
+  startDate: number | null
+  endDate: number | null
+  duration: number | null
+  ad: boolean
 }
 
 interface SegmentGroup {
@@ -25,7 +36,7 @@ interface SegmentGroup {
 function uriIsAd(uri: string, baseUrl: string): boolean {
   try {
     const absolute = new URL(uri, baseUrl)
-    return AD_URI.test(absolute.href) || AD_HOST.test(absolute.hostname)
+    return AD_URI.test(absolute.href) || AD_HOST.test(absolute.href)
   } catch {
     return AD_URI.test(uri)
   }
@@ -39,6 +50,52 @@ function extinf(line: string): { duration: number; precision: number } | null {
   return Number.isFinite(duration)
     ? { duration, precision: dot < 0 ? 0 : match[1].length - dot - 1 }
     : null
+}
+
+function attributeList(line: string): Map<string, string> {
+  const attributes = new Map<string, string>()
+  const body = line.slice(line.indexOf(':') + 1)
+  for (const match of body.matchAll(/(?:^|,)\s*([A-Z0-9-]+)=((?:"[^"]*")|[^,]*)/gi)) {
+    attributes.set(match[1].toUpperCase(), match[2].replace(/^"|"$/g, '').trim())
+  }
+  return attributes
+}
+
+function secondsAttribute(attributes: Map<string, string>, name: string): number | null {
+  const value = Number(attributes.get(name))
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function isAdDateRange(attributes: Map<string, string>): boolean {
+  const marker = `${attributes.get('ID') ?? ''} ${attributes.get('CLASS') ?? ''}`
+  return AD_URI.test(marker) || attributes.has('SCTE35-OUT') || attributes.has('SCTE35-IN') || attributes.has('X-ASSET-URI')
+}
+
+function isAdMarkerLine(line: string): boolean {
+  if (AD_TAG.test(line) || /^#EXT-X-CUE-(?:OUT|IN)/i.test(line)) return true
+  return /^#EXT-X-DATERANGE:/i.test(line) && isAdDateRange(attributeList(line))
+}
+
+function mergeAdDateRange(ranges: Map<string, AdDateRange>, line: string, startOffset: number): void {
+  if (!/^#EXT-X-DATERANGE:/i.test(line)) return
+  const attributes = attributeList(line)
+  const id = attributes.get('ID')
+  if (!id) return
+  const current = ranges.get(id) ?? {
+    id,
+    startOffset,
+    startDate: null,
+    endDate: null,
+    duration: null,
+    ad: false
+  }
+  const startDate = Date.parse(attributes.get('START-DATE') ?? '')
+  const endDate = Date.parse(attributes.get('END-DATE') ?? '')
+  if (Number.isFinite(startDate)) current.startDate = startDate
+  if (Number.isFinite(endDate)) current.endDate = endDate
+  current.duration = secondsAttribute(attributes, 'DURATION') ?? current.duration
+  current.ad ||= isAdDateRange(attributes)
+  ranges.set(id, current)
 }
 
 function totalUris(lines: string[]): number {
@@ -63,7 +120,14 @@ function buildGroups(segments: Segment[]): SegmentGroup[] {
       totalDuration: current.reduce((sum, segment) => sum + segment.duration, 0),
       host: firstUrl?.host ?? '',
       pathPrefix: firstUrl ? firstUrl.pathname.slice(0, firstUrl.pathname.lastIndexOf('/') + 1) : '',
-      adLike: current.some((segment) => segment.markedAd || uriIsAd(segment.uri, 'https://playlist.invalid'))
+      adLike: current.some((segment) => {
+        try {
+          const url = new URL(segment.uri, 'https://playlist.invalid')
+          return segment.markedAd || uriIsAd(segment.uri, 'https://playlist.invalid') || AD_HOST.test(url.hostname)
+        } catch {
+          return segment.markedAd || uriIsAd(segment.uri, 'https://playlist.invalid')
+        }
+      })
     })
     current = []
   }
@@ -75,8 +139,8 @@ function buildGroups(segments: Segment[]): SegmentGroup[] {
   return groups
 }
 
-function segmentLimit(segments: Segment[]): number {
-  const minutes = totalDuration(segments) / 60
+function adSegmentLimit(durationSeconds: number): number {
+  const minutes = durationSeconds / 60
   if (minutes <= 30) return 18
   if (minutes <= 60) return 24
   if (minutes <= 90) return 30
@@ -97,7 +161,7 @@ function markGroups(groups: SegmentGroup[], remove: Set<Segment>, predicate: (gr
   return count
 }
 
-function removeDecimalPrecisionGroups(segments: Segment[], remove: Set<Segment>, originalCount: number): void {
+function removeDecimalPrecisionGroups(segments: Segment[], remove: Set<Segment>, originalCount: number, originalDuration: number): void {
   const remaining = segments.filter((segment) => !remove.has(segment))
   const groups = buildGroups(remaining)
   const precisionCounts = new Map<number, number>()
@@ -118,7 +182,7 @@ function removeDecimalPrecisionGroups(segments: Segment[], remove: Set<Segment>,
     return precisions.length > 0 && precisions.every((precision) => precision !== dominant[0])
   })
   const count = toRemove.reduce((sum, group) => sum + group.segments.length, 0)
-  if (!count || count > segmentLimit(remaining) || count > originalCount * 0.3) return
+  if (!count || count > adSegmentLimit(originalDuration) || count > originalCount * 0.3) return
   markGroups(groups, remove, (group, index) => toRemove.includes(group) && index !== groups.length - 1)
 }
 
@@ -180,11 +244,11 @@ function removeFrameRateGroups(segments: Segment[], remove: Set<Segment>): void 
     return mismatched > 0 && mismatched >= matched
   })
   const count = removable.reduce((sum, group) => sum + group.segments.length, 0)
-  if (!count || count > segmentLimit(remaining)) return
+  if (!count || count > adSegmentLimit(totalDuration(segments))) return
   for (const group of removable) for (const segment of group.segments) remove.add(segment)
 }
 
-function removeUniformDurationGroups(segments: Segment[], remove: Set<Segment>, originalCount: number): void {
+function removeUniformDurationGroups(segments: Segment[], remove: Set<Segment>, originalCount: number, originalDuration: number): void {
   const remaining = segments.filter((segment) => !remove.has(segment))
   const groups = buildGroups(remaining)
   if (groups.length < 4) return
@@ -209,8 +273,32 @@ function removeUniformDurationGroups(segments: Segment[], remove: Set<Segment>, 
       Math.abs(duration - mainDuration) >= 0.05
   })
   const count = removable.reduce((sum, group) => sum + group.segments.length, 0)
-  if (!count || count > segmentLimit(remaining) || count > originalCount * 0.3) return
+  if (!count || count > adSegmentLimit(originalDuration) || count > originalCount * 0.3) return
   for (const group of removable) for (const segment of group.segments) remove.add(segment)
+}
+
+function median(values: number[]): number | null {
+  if (!values.length) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+function boundedCadenceOutlier(group: SegmentGroup, index: number, groups: SegmentGroup[]): boolean {
+  if (index === 0 || index === groups.length - 1 || group.segments.length < 3 ||
+    group.segments.length > MAX_FRAME_RATE_AD_BLOCK_SIZE) return false
+  const candidate = group.segments.map((segment) => segment.duration)
+  const candidateMedian = median(candidate)
+  if (candidateMedian === null || candidateMedian <= 0 ||
+    candidate.some((duration) => Math.abs(duration - candidateMedian) > 0.05)) return false
+
+  const before = groups[index - 1].segments.slice(-12).map((segment) => segment.duration)
+  const after = groups[index + 1].segments.slice(0, 12).map((segment) => segment.duration)
+  if (before.length < 3 || after.length < 3) return false
+  const beforeMedian = median(before)
+  const afterMedian = median(after)
+  if (beforeMedian === null || afterMedian === null || Math.abs(beforeMedian - afterMedian) > 0.04) return false
+  return Math.abs(candidateMedian - (beforeMedian + afterMedian) / 2) >= 0.08
 }
 
 function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>): void {
@@ -229,9 +317,109 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
       (main.totalDuration > 0 && group.totalDuration > 0 && group.totalDuration < main.totalDuration * 0.18)
     const differentHost = Boolean(main.host && group.host && main.host !== group.host)
     const differentPath = Boolean(main.pathPrefix && group.pathPrefix && main.pathPrefix !== group.pathPrefix)
-    const adLike = group.adLike || differentHost || (group.segments.length <= 2 && differentPath)
+    const adLike = group.adLike || differentHost || (group.segments.length <= 2 && differentPath) ||
+      boundedCadenceOutlier(group, groups.indexOf(group), groups)
     if (shortGroup && adLike) for (const segment of group.segments) remove.add(segment)
   }
+}
+
+function absoluteUri(uri: string, baseUrl: string): string {
+  try {
+    return new URL(uri, baseUrl).href
+  } catch {
+    return uri
+  }
+}
+
+function androidUrlPrefix(uri: string, baseUrl: string): string | null {
+  const absolute = absoluteUri(uri, baseUrl)
+  const extension = absolute.lastIndexOf('.')
+  if (extension <= 4) return null
+  return absolute.slice(0, extension - 4)
+}
+
+function minorityUrlRemovalIndexes(
+  uris: string[],
+  baseUrl: string,
+): Set<number> {
+  const prefixes = new Map<string, number>()
+  for (const uri of uris) {
+    const prefix = androidUrlPrefix(uri, baseUrl)
+    if (prefix) prefixes.set(prefix, (prefixes.get(prefix) ?? 0) + 1)
+  }
+  if (prefixes.size <= 1) return new Set()
+
+  const maxPercent = (counts: Map<string, number>): number => {
+    const values = [...counts.values()]
+    const total = values.reduce((sum, value) => sum + value, 0)
+    return total ? Math.max(...values) / total : 0
+  }
+  let domainFiltering = false
+  if (maxPercent(prefixes) < 0.8) {
+    prefixes.clear()
+    for (const uri of uris) {
+      try {
+        const url = new URL(uri, baseUrl)
+        prefixes.set(url.origin, (prefixes.get(url.origin) ?? 0) + 1)
+      } catch {
+        return new Set()
+      }
+    }
+    if (prefixes.size <= 1 || maxPercent(prefixes) < 0.8 ||
+      [...prefixes.values()].every((count) => count > 15)) return new Set()
+    domainFiltering = true
+  }
+
+  const dominant = [...prefixes.entries()].reduce((best, entry) => entry[1] > best[1] ? entry : best)[0]
+  const remove = new Set<number>()
+  uris.forEach((uri, index) => {
+    const absolute = absoluteUri(uri, baseUrl)
+    let identity = ''
+    if (domainFiltering) {
+      try { identity = new URL(uri, baseUrl).origin } catch { /* fall through to Android's empty host behavior */ }
+    }
+    const count = prefixes.get(identity) ?? 0
+    const keep = domainFiltering
+      ? identity === dominant || count > 15
+      : absolute.startsWith(dominant)
+    if (!keep) remove.add(index)
+  })
+  return remove.size > uris.length * 0.3 ? new Set() : remove
+}
+
+function removeMinorityUrlLines(content: string, baseUrl: string): { content: string; removed: number } {
+  const lines = content.split(/\r?\n/)
+  const uris = lines.filter((line) => line.length > 0 && !line.startsWith('#'))
+  const removeIndexes = minorityUrlRemovalIndexes(uris, baseUrl)
+  if (!removeIndexes.size) return { content, removed: 0 }
+
+  const eol = content.includes('\r\n') ? '\r\n' : '\n'
+  const output: string[] = []
+  const pending: string[] = []
+  let uriIndex = 0
+  const segmentTag = /^\s*#(?:EXTINF:|EXT-X-BYTERANGE|EXT-X-PROGRAM-DATE-TIME|EXT-X-DISCONTINUITY(?:$|:)|EXT-X-PART:|EXT-X-PRELOAD-HINT:)/i
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) {
+      if (pending.length) pending.push(raw)
+      else output.push(raw)
+    } else if (line.startsWith('#')) {
+      if (segmentTag.test(line)) pending.push(raw)
+      else {
+        output.push(...pending, raw)
+        pending.length = 0
+      }
+    } else {
+      if (removeIndexes.has(uriIndex++)) {
+        pending.length = 0
+      } else {
+        output.push(...pending, raw)
+        pending.length = 0
+      }
+    }
+  }
+  output.push(...pending)
+  return { content: output.join(eol), removed: removeIndexes.size }
 }
 
 function normalizeMediaPlaylist(lines: string[]): string[] {
@@ -288,9 +476,11 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   if (!content.startsWith('#EXTM3U') || /#EXT-X-STREAM-INF/i.test(content)) return input
 
   const eol = content.includes('\r\n') ? '\r\n' : '\n'
-  const lines = content.split(/\r?\n/)
-  const originalCount = totalUris(lines)
+  const originalCount = totalUris(content.split(/\r?\n/))
   if (!originalCount) return input
+  const urlFiltered = removeMinorityUrlLines(content, baseUrl)
+  const lines = urlFiltered.content.split(/\r?\n/)
+  const vod = /#EXT-X-ENDLIST(?:\s|$)/i.test(content)
 
   const segments: Segment[] = []
   const leading: string[] = []
@@ -300,10 +490,29 @@ export function purifyM3u8(baseUrl: string, input: string): string {
   let inAdBreak = false
   let markedAd = false
   let adDiscontinuity = false
+  let cueAdEndOffset: number | null = null
   let cueRemovedCount = 0
+  let elapsed = 0
+  let programDateTime: number | null = null
+  let scteAdStart: number | null = null
+  const adDateRanges = new Map<string, AdDateRange>()
+  const scteAdIntervals: Array<{ start: number; end: number }> = []
 
   for (const raw of lines) {
     const line = raw.trim()
+    if (/^#EXT-X-PROGRAM-DATE-TIME:/i.test(line)) {
+      const timestamp = Date.parse(line.slice(line.indexOf(':') + 1))
+      programDateTime = Number.isFinite(timestamp) ? timestamp : null
+    }
+    mergeAdDateRange(adDateRanges, line, elapsed)
+    if (/^#EXT-X-DATERANGE:/i.test(line)) {
+      const attributes = attributeList(line)
+      if (attributes.has('SCTE35-OUT') && scteAdStart === null) scteAdStart = elapsed
+      if (attributes.has('SCTE35-IN') && scteAdStart !== null) {
+        scteAdIntervals.push({ start: scteAdStart, end: elapsed })
+        scteAdStart = null
+      }
+    }
     if (/^#EXT-X-KEY:/i.test(line)) activeKey = raw
     if (/^#EXT-X-MAP:/i.test(line)) activeMap = raw
 
@@ -313,7 +522,14 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       adDiscontinuity = false
       continue
     }
-    if (line.startsWith('#EXT-X-CUE-OUT')) {
+    if (/^#EXT-X-CUE-OUT(?:-CONT)?(?::|$)/i.test(line)) {
+      const attributes = attributeList(line)
+      const rawDuration = line.match(/^#EXT-X-CUE-OUT:(\s*[\d.]+)/i)?.[1]
+      const duration = secondsAttribute(attributes, 'DURATION') ?? Number(rawDuration)
+      const elapsedTime = secondsAttribute(attributes, 'ELAPSEDTIME') ?? 0
+      if (Number.isFinite(duration) && duration > 0) {
+        cueAdEndOffset = elapsed + Math.max(0, duration - elapsedTime)
+      }
       inAdBreak = true
       pending = []
       continue
@@ -324,8 +540,22 @@ export function purifyM3u8(baseUrl: string, input: string): string {
         inAdBreak = false
       } else if (line && !line.startsWith('#')) {
         cueRemovedCount++
+        const durationInfo = extinf(pending.find((part) => /^\s*#EXTINF:/i.test(part)) ?? '')
+        const duration = durationInfo?.duration ?? 0
+        elapsed += duration
+        if (programDateTime !== null) programDateTime += duration * 1000
+        pending = []
+        if (cueAdEndOffset !== null && elapsed >= cueAdEndOffset) {
+          inAdBreak = false
+          cueAdEndOffset = null
+          pending = adDiscontinuity ? ['#EXT-X-DISCONTINUITY'] : []
+          adDiscontinuity = false
+        }
       } else if (line.startsWith('#EXT-X-DISCONTINUITY')) {
         adDiscontinuity = true
+        pending.push(raw)
+      } else if (line) {
+        pending.push(raw)
       }
       continue
     }
@@ -337,16 +567,21 @@ export function purifyM3u8(baseUrl: string, input: string): string {
       const segmentLines = [...pending, raw]
       const extinfLine = pending.find((part) => /^\s*#EXTINF:/i.test(part)) ?? ''
       const durationInfo = extinf(extinfLine)
+      const duration = durationInfo?.duration ?? 0
       segments.push({
         lines: segmentLines,
         uri: line,
-        duration: durationInfo?.duration ?? 0,
+        duration,
+        startOffset: elapsed,
+        programDateTime,
         durationPrecision: durationInfo?.precision ?? -1,
         discontinuity: pending.some((part) => part.trimStart().startsWith('#EXT-X-DISCONTINUITY')),
         markedAd,
         keyState: activeKey,
         mapState: activeMap
       })
+      elapsed += duration
+      if (programDateTime !== null) programDateTime += duration * 1000
       pending = []
       markedAd = false
       continue
@@ -359,45 +594,44 @@ export function purifyM3u8(baseUrl: string, input: string): string {
     }
   }
 
-  if (segments.length + cueRemovedCount !== originalCount) return input
+  if (segments.length + cueRemovedCount + urlFiltered.removed !== originalCount) return input
   const remove = new Set<Segment>()
   segments.forEach((segment) => {
     if (uriIsAd(segment.uri, baseUrl) || segment.markedAd) remove.add(segment)
   })
 
-  const hasVodDiscontinuities = lines.some((line) => line.trim() === '#EXT-X-ENDLIST') &&
-    lines.some((line) => line.trim().startsWith('#EXT-X-DISCONTINUITY'))
-  if (hasVodDiscontinuities) {
-    removeDecimalPrecisionGroups(segments, remove, originalCount)
+  const firstTimedSegment = segments.find((segment) => segment.programDateTime !== null)
+  const overlaps = (segment: Segment, start: number, end: number): boolean =>
+    segment.startOffset < end && segment.startOffset + segment.duration > start
+  for (const range of adDateRanges.values()) {
+    if (!range.ad) continue
+    const duration = range.endDate !== null && range.startDate !== null
+      ? (range.endDate - range.startDate) / 1000
+      : range.duration
+    if (duration === null || duration <= 0) continue
+    let startOffset = range.startOffset
+    if (range.startDate !== null && firstTimedSegment?.programDateTime !== null && firstTimedSegment?.programDateTime !== undefined) {
+      startOffset = firstTimedSegment.startOffset + (range.startDate - firstTimedSegment.programDateTime) / 1000
+    }
+    for (const segment of segments) {
+      if (overlaps(segment, startOffset, startOffset + duration)) remove.add(segment)
+    }
+  }
+  for (const interval of scteAdIntervals) {
+    for (const segment of segments) {
+      if (overlaps(segment, interval.start, interval.end)) remove.add(segment)
+    }
+  }
+
+  const originalDuration = totalDuration(segments)
+  if (vod && segments.some((segment) => segment.discontinuity)) {
+    removeDecimalPrecisionGroups(segments, remove, originalCount, originalDuration)
     removeFrameRateGroups(segments, remove)
-    removeUniformDurationGroups(segments, remove, originalCount)
+    removeUniformDurationGroups(segments, remove, originalCount, originalDuration)
   }
   removeDiscontinuityAdGroups(segments, remove)
 
-  // Also mirror Android's dominant media-name prefix filter when a playlist is strongly clustered.
-  if (segments.length >= 8) {
-    const prefix = (value: string): string => {
-      try {
-        const url = new URL(value, baseUrl)
-        url.pathname = url.pathname.replace(/(.*?)(?:[-_]?\d{1,7})?\.[^.]+$/, '$1')
-        url.search = ''
-        return url.origin + url.pathname
-      } catch {
-        return value
-      }
-    }
-    const counts = new Map<string, number>()
-    for (const segment of segments) counts.set(prefix(segment.uri), (counts.get(prefix(segment.uri)) ?? 0) + 1)
-    const largest = Math.max(...counts.values())
-    if (counts.size > 1 && largest / segments.length >= 0.8) {
-      const main = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-      for (const segment of segments) {
-        if (prefix(segment.uri) !== main && !remove.has(segment) && remove.size + cueRemovedCount < originalCount * 0.3) remove.add(segment)
-      }
-    }
-  }
-
-  const removedCount = remove.size + cueRemovedCount
+  const removedCount = remove.size + cueRemovedCount + urlFiltered.removed
   if (!removedCount || removedCount > originalCount * 0.5) return input
 
   const output = [...leading]
@@ -407,9 +641,14 @@ export function purifyM3u8(baseUrl: string, input: string): string {
     if (remove.has(segment)) continue
     keyState = appendState(output, '#EXT-X-KEY', keyState, segment.keyState)
     mapState = appendState(output, '#EXT-X-MAP', mapState, segment.mapState)
-    output.push(...segment.lines.filter((line) => !/^\s*#EXT-X-(?:KEY|MAP):/i.test(line)))
+    output.push(...segment.lines.filter((line) =>
+      !/^\s*#EXT-X-(?:KEY|MAP):/i.test(line) && !isAdMarkerLine(line.trim())
+    ))
   }
-  output.push(...pending.filter((line) => line.trim() === '#EXT-X-ENDLIST' || !AD_TAG.test(line.trim())))
+  output.push(...pending.filter((line) => {
+    const trimmed = line.trim()
+    return trimmed === '#EXT-X-ENDLIST' || !isAdMarkerLine(trimmed)
+  }))
   const normalized = normalizeMediaPlaylist(output)
   if (totalUris(normalized) <= 0 || !normalized.some((line) => /^#EXTM3U/.test(line)) || !isPlayable(normalized)) return input
   const result = normalized.join(eol)
