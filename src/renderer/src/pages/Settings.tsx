@@ -942,6 +942,12 @@ function GeneralSettings({ settings, draft, setDraft, onImmediatePatch, onUpdate
                 aria-pressed={settings.theme === 'dark'}
                 onClick={() => void saveTheme('dark')}
               >{translate("暗黑")}</button>
+              <button
+                type="button"
+                className={settings.theme === 'system' ? 'active' : ''}
+                aria-pressed={settings.theme === 'system'}
+                onClick={() => void saveTheme('system')}
+              >{translate("跟随系统")}</button>
             </div>
           </div>
           <div className="field">

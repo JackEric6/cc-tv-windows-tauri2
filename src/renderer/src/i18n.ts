@@ -34,6 +34,7 @@ const english: Record<string, string> = {
   '外观主题': 'Appearance',
   '白色': 'Light',
   '暗黑': 'Dark',
+  '跟随系统': 'System',
   '语言': 'Language',
   '简体中文': '简体中文',
   '外观、播放、影视源与解析服务': 'Appearance, playback, sources, and parsers',
