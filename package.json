@@ -1,6 +1,6 @@
 {
   "name": "congcong-tv-windows-tauri2",
-  "version": "1.0.32",
+  "version": "1.0.33",
   "description": "丛丛影视 Windows 桌面客户端（Tauri 2 + WebView2 Evergreen）",
   "license": "MIT",
   "private": true,
@@ -12,6 +12,7 @@
     "build": "npm run build:sidecar && vite build",
     "build:win": "tauri build --bundles nsis",
     "tauri": "tauri",
+    "test:m3u8": "node scripts/test-m3u8-purify.mjs",
     "selftest": "node scripts/selftest.mjs",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",

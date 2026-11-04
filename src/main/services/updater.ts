@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { networkFetch } from './http'
 
 const REPOSITORY = 'JackEric6/cc-tv-windows-tauri2'
+const UPDATE_ASSET_SUFFIX = ''
 const RELEASE_ASSET_SUFFIX = ''
 const GITHUB_ACCEL_PREFIXES = [
   'https://gh-proxy.org/',
@@ -523,7 +524,7 @@ async function getLatestRelease(): Promise<LatestReleaseInfo> {
   const tag = typeof release.tag_name === 'string' ? release.tag_name : ''
   const latestVersion = tag.replace(/^v/, '')
   if (!versionParts(latestVersion)) throw new Error('GitHub Release 版本号格式无效')
-  const assetName = `cc-tv-windows-tauri2-${latestVersion}-setup.exe`
+  const assetName = `cc-tv-windows-tauri2-${latestVersion}${UPDATE_ASSET_SUFFIX}-setup.exe`
   const asset = release.assets?.find((item) => item.name === assetName)
   if (!asset || typeof asset.size !== 'number' || asset.size < 1_000_000 || asset.size > MAX_INSTALLER_BYTES) {
     throw new Error('最新 Release 中没有有效的 Windows 安装包')
