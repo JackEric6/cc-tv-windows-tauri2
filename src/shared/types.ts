@@ -291,7 +291,7 @@ export interface AppSettings {
   /** 使用 Windows 当前配置的系统代理 */
   useSystemProxy: boolean
   userAgent: string
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'system'
   accent: string
   density: 'comfortable' | 'compact'
   sidebarCollapsed: boolean

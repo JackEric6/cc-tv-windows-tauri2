@@ -1476,6 +1476,17 @@
 .player-stage .video-js .vjs-progress-control .vjs-progress-holder {
   height: 3px;
   margin: 0;
+  font-size: inherit !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.player-stage .video-js .vjs-progress-control:hover .vjs-progress-holder,
+.player-stage .video-js.vjs-scrubbing.vjs-touch-enabled .vjs-progress-control .vjs-progress-holder {
+  height: 3px;
+  font-size: inherit !important;
+  box-shadow: none !important;
+  transition: none !important;
 }
 
 .player-stage .video-js .vjs-time-tooltip {

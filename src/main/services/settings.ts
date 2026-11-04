@@ -52,6 +52,7 @@ export async function getSettings(): Promise<AppSettings> {
     ...DEFAULT_SETTINGS,
     ...stored,
     settingsVersion: 5,
+    theme: stored.theme === 'dark' || stored.theme === 'system' ? stored.theme : 'light',
     homeSourceKey,
     concurrency: storedVersion < 3 && stored.concurrency === 8
       ? 10
