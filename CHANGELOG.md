@@ -1,5 +1,11 @@
 # 更新日志
 
+## v1.0.33 — Windows 版（remove-adult-filter）
+
+- 按安卓版 `M3u8` 的净化顺序重构广告处理：URL 少数模式、CUE/SCTE/日期区间标记、VOD 切片精度/帧率/节奏和 discontinuity 分组识别。
+- 移除单个剧集地址的硬编码规则，改由通用播放列表规则识别。
+- 保留移除 18+ 过滤的分支功能；更新器只匹配 `-no-adult-filter` 后缀安装包。
+
 ## v1.0.32 — Windows 版（feature/remove-adult-filter）
 
 - 播放页剧集列表增加与线路标题同格式的“选集”标题。
