@@ -903,9 +903,28 @@ export const useApp = create<AppState>((set, get) => ({
 }))
 
 /** 把设置里的强调色与密度写到根节点，CSS 变量驱动全局 */
+let systemThemeQuery: MediaQueryList | null = null
+let systemThemeListener: ((event: MediaQueryListEvent) => void) | null = null
+
 function applyTheme(settings: AppSettings): void {
   const root = document.documentElement
-  root.dataset.theme = settings.theme ?? 'light'
+  if (systemThemeQuery && systemThemeListener) {
+    systemThemeQuery.removeEventListener('change', systemThemeListener)
+  }
+  systemThemeQuery = null
+  systemThemeListener = null
+
+  const applySystemTheme = (dark: boolean): void => {
+    root.dataset.theme = dark ? 'dark' : 'light'
+  }
+  if (settings.theme === 'system') {
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    applySystemTheme(systemThemeQuery.matches)
+    systemThemeListener = (event) => applySystemTheme(event.matches)
+    systemThemeQuery.addEventListener('change', systemThemeListener)
+  } else {
+    root.dataset.theme = settings.theme
+  }
   const accent = '#6A3DE8'
   root.style.setProperty('--accent', accent)
   root.style.setProperty('--accent-hover', shade(accent, -12))

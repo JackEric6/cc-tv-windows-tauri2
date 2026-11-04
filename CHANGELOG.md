@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.0.34 — Windows 版（remove-adult-filter）
+
+- 固定播放器进度槽的悬停尺寸并关闭尺寸过渡，消除鼠标进入或离开进度条时灰色边缘闪动。
+- 外观主题增加“跟随系统”，并在系统明暗模式变化时自动切换。
+
 ## v1.0.33 — Windows 版（remove-adult-filter）
 
 - 按安卓版 `M3u8` 的净化顺序重构广告处理：URL 少数模式、CUE/SCTE/日期区间标记、VOD 切片精度/帧率/节奏和 discontinuity 分组识别。
