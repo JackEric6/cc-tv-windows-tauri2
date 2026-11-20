@@ -323,6 +323,146 @@ function removeDiscontinuityAdGroups(segments: Segment[], remove: Set<Segment>):
   }
 }
 
+/**
+ * 西瓜源的插片广告有一类没有任何 HLS 广告标签，且分片 URL 与正片完全同域。
+ * 这类清单通常只在短暂的不连续组内切换 H.264 SPS（例如 1920x1044 -> 1920x1080），
+ * 前后又恢复为原编码。只处理被同一 SPS 正片包围的短突变区，避免把正常换清晰度误判为广告。
+ */
+function removeSpsVariantGroups(
+  baseUrl: string,
+  segments: Segment[],
+  remove: Set<Segment>,
+  signatures: Map<string, string>
+): void {
+  if (!signatures.size) return
+  const groups = buildGroups(segments)
+  if (groups.length < 3) return
+
+  const groupSignatures = groups.map((group) => {
+    const counts = new Map<string, number>()
+    for (const segment of group.segments) {
+      const signature = signatures.get(absoluteUri(segment.uri, baseUrl))
+      if (signature) counts.set(signature, (counts.get(signature) ?? 0) + 1)
+    }
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1])
+    return ranked[0]?.[0] ?? ''
+  })
+  const known = groupSignatures.filter(Boolean)
+  if (known.length < 3) return
+  const signatureCounts = new Map<string, number>()
+  for (const signature of known) signatureCounts.set(signature, (signatureCounts.get(signature) ?? 0) + 1)
+  const dominant = [...signatureCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  if (!dominant || (signatureCounts.get(dominant) ?? 0) < 3) return
+
+  const candidates: SegmentGroup[] = []
+  let index = 0
+  while (index < groups.length) {
+    if (!groupSignatures[index] || groupSignatures[index] === dominant) {
+      index++
+      continue
+    }
+    const start = index
+    while (index + 1 < groups.length &&
+      groupSignatures[index + 1] &&
+      groupSignatures[index + 1] !== dominant) index++
+    const end = index
+    const run = groups.slice(start, end + 1)
+    const runDuration = run.reduce((sum, group) => sum + group.totalDuration, 0)
+    const runSegments = run.reduce((sum, group) => sum + group.segments.length, 0)
+    const bounded = start > 0 && end < groups.length - 1 &&
+      groupSignatures[start - 1] === dominant &&
+      groupSignatures[end + 1] === dominant
+    const hasShortBoundary = run.some((group) => group.segments.length <= 3 || group.totalDuration <= 12)
+    const repeatedVariant = run.length > 1 || (signatureCounts.get(groupSignatures[start]) ?? 0) > 1
+    if (bounded && runDuration > 0 && runDuration <= 90 && runSegments <= 18 &&
+      hasShortBoundary && repeatedVariant) candidates.push(...run)
+    index++
+  }
+  for (const group of candidates) {
+    for (const segment of group.segments) remove.add(segment)
+  }
+}
+
+/** 从 MPEG-TS 中提取首个 H.264 SPS，返回稳定的十六进制签名。 */
+export function extractH264SpsSignature(input: Uint8Array): string | null {
+  let pmtPid = -1
+  let videoPid = -1
+  const payloads: Uint8Array[] = []
+  let payloadLength = 0
+  for (let offset = 0; offset + 188 <= input.length; offset += 188) {
+    if (input[offset] !== 0x47) continue
+    const first = input[offset + 1]
+    const pid = ((first & 0x1f) << 8) | input[offset + 2]
+    const flags = input[offset + 3]
+    const adaptation = (flags >> 4) & 0x03
+    let payloadOffset = offset + 4
+    if (adaptation === 2 || adaptation === 3) payloadOffset += 1 + input[payloadOffset]
+    if (payloadOffset >= offset + 188 || adaptation === 2) continue
+    const payload = input.subarray(payloadOffset, offset + 188)
+    const payloadUnitStart = (first & 0x40) !== 0
+
+    if (pid === 0) {
+      const pointer = payloadUnitStart ? payload[0] ?? 0 : 0
+      const start = (payloadUnitStart ? 1 : 0) + pointer
+      if (payload[start] !== 0) continue
+      const sectionLength = ((payload[start + 1] & 0x0f) << 8) | payload[start + 2]
+      const end = Math.min(payload.length, start + 3 + sectionLength - 4)
+      for (let cursor = start + 8; cursor + 4 <= end; cursor += 4) {
+        const program = (payload[cursor] << 8) | payload[cursor + 1]
+        if (program) {
+          pmtPid = ((payload[cursor + 2] & 0x1f) << 8) | payload[cursor + 3]
+          break
+        }
+      }
+      continue
+    }
+    if (pid === pmtPid && pmtPid >= 0) {
+      const pointer = payloadUnitStart ? payload[0] ?? 0 : 0
+      const start = (payloadUnitStart ? 1 : 0) + pointer
+      if (payload[start] !== 2) continue
+      const sectionLength = ((payload[start + 1] & 0x0f) << 8) | payload[start + 2]
+      const programInfoLength = ((payload[start + 10] & 0x0f) << 8) | payload[start + 11]
+      const end = Math.min(payload.length, start + 3 + sectionLength - 4)
+      for (let cursor = start + 12 + programInfoLength; cursor + 5 <= end;) {
+        const streamType = payload[cursor]
+        const elementaryPid = ((payload[cursor + 1] & 0x1f) << 8) | payload[cursor + 2]
+        const esInfoLength = ((payload[cursor + 3] & 0x0f) << 8) | payload[cursor + 4]
+        if (streamType === 0x1b || streamType === 0x24 || streamType === 0x02) {
+          videoPid = elementaryPid
+          break
+        }
+        cursor += 5 + esInfoLength
+      }
+      continue
+    }
+    if (pid === videoPid && videoPid >= 0) {
+      payloads.push(payload)
+      payloadLength += payload.length
+      if (payloadLength >= 512 * 1024) break
+    }
+  }
+  if (videoPid < 0 || !payloads.length) return null
+  const video = new Uint8Array(payloadLength)
+  let cursor = 0
+  for (const payload of payloads) {
+    video.set(payload, cursor)
+    cursor += payload.length
+  }
+  for (let index = 0; index + 4 < video.length; index++) {
+    let start = 0
+    if (video[index] === 0 && video[index + 1] === 0 && video[index + 2] === 1) start = 3
+    else if (video[index] === 0 && video[index + 1] === 0 && video[index + 2] === 0 && video[index + 3] === 1) start = 4
+    else continue
+    if ((video[index + start] & 0x1f) !== 7) continue
+    let end = index + start + 1
+    while (end + 3 < video.length &&
+      !(video[end] === 0 && video[end + 1] === 0 &&
+        (video[end + 2] === 1 || (video[end + 2] === 0 && video[end + 3] === 1)))) end++
+    return Array.from(video.subarray(index + start, end), (value) => value.toString(16).padStart(2, '0')).join('')
+  }
+  return null
+}
+
 function absoluteUri(uri: string, baseUrl: string): string {
   try {
     return new URL(uri, baseUrl).href
@@ -471,7 +611,7 @@ function appendState(output: string[], tag: string, current: string, next: strin
 }
 
 /** Mirrors Android's conservative VOD segment-group filters while retaining HLS key/map state. */
-export function purifyM3u8(baseUrl: string, input: string): string {
+export function purifyM3u8(baseUrl: string, input: string, segmentSignatures?: Map<string, string>): string {
   const content = input.replace(/^\uFEFF/, '')
   if (!content.startsWith('#EXTM3U') || /#EXT-X-STREAM-INF/i.test(content)) return input
 
@@ -629,6 +769,7 @@ export function purifyM3u8(baseUrl: string, input: string): string {
     removeFrameRateGroups(segments, remove)
     removeUniformDurationGroups(segments, remove, originalCount, originalDuration)
   }
+  if (segmentSignatures) removeSpsVariantGroups(baseUrl, segments, remove, segmentSignatures)
   removeDiscontinuityAdGroups(segments, remove)
 
   const removedCount = remove.size + cueRemovedCount + urlFiltered.removed

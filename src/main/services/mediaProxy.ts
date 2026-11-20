@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import { extname, join, relative, resolve, sep } from 'node:path'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { app, networkFetch } from '../../tauri/platform'
-import { purifyM3u8 } from './m3u8Purify'
+import { extractH264SpsSignature, purifyM3u8 } from './m3u8Purify'
 import { normalizeRequestHeaders } from './http'
 
 let server: Server | undefined
@@ -61,6 +61,129 @@ function readResponseText(response: ProxyResponse): Promise<string> {
   })
 }
 
+interface ProbeGroup {
+  index: number
+  urls: string[]
+  duration: number
+}
+
+function parseProbeGroups(baseUrl: string, content: string): ProbeGroup[] {
+  const groups: ProbeGroup[] = []
+  let current: ProbeGroup = { index: 0, urls: [], duration: 0 }
+  let pendingDuration = 0
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '#EXT-X-DISCONTINUITY' && current.urls.length) {
+      groups.push(current)
+      current = { index: groups.length, urls: [], duration: 0 }
+      pendingDuration = 0
+      continue
+    }
+    const duration = line.match(/^#EXTINF:\s*([\d.]+)/i)
+    if (duration) {
+      pendingDuration = Number(duration[1])
+      continue
+    }
+    if (line && !line.startsWith('#')) {
+      try {
+        current.urls.push(new URL(line, baseUrl).href)
+      } catch {
+        current.urls.push(line)
+      }
+      if (Number.isFinite(pendingDuration)) current.duration += pendingDuration
+      pendingDuration = 0
+    }
+  }
+  if (current.urls.length) groups.push(current)
+  return groups
+}
+
+async function readProbeBytes(response: Response, maxBytes = 512 * 1024): Promise<Uint8Array> {
+  if (!response.body) return new Uint8Array()
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    while (total < maxBytes) {
+      const next = await reader.read()
+      if (next.done || !next.value) break
+      const remaining = maxBytes - total
+      const chunk = next.value.byteLength > remaining ? next.value.subarray(0, remaining) : next.value
+      chunks.push(chunk)
+      total += chunk.byteLength
+      if (chunk.byteLength < next.value.byteLength || total >= maxBytes) break
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  const output = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    output.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return output
+}
+
+async function probeSps(
+  url: string,
+  headers: Record<string, string>,
+  signal: AbortSignal
+): Promise<string | null> {
+  try {
+    const requestHeaders = { ...headers, Range: 'bytes=0-524287' }
+    const response = await networkFetch(url, {
+      method: 'GET',
+      headers: normalizeRequestHeaders(requestHeaders),
+      redirect: 'follow',
+      signal
+    })
+    if (!response.ok) return null
+    return extractH264SpsSignature(await readProbeBytes(response))
+  } catch {
+    return null
+  }
+}
+
+async function purifyPlaybackPlaylist(
+  baseUrl: string,
+  content: string,
+  headers: Record<string, string>
+): Promise<string> {
+  const host = (() => {
+    try { return new URL(baseUrl).hostname.toLowerCase() } catch { return '' }
+  })()
+  const xigua = /(?:^|\.)(?:xgplay\d*|xgzy|jimxtc)\./i.test(host)
+  if (!xigua || !/#EXT-X-ENDLIST(?:\s|$)/i.test(content)) return purifyM3u8(baseUrl, content)
+
+  const groups = parseProbeGroups(baseUrl, content)
+  const shortGroups = groups.filter((group) => group.urls.length <= 3 || group.duration <= 12)
+  if (!shortGroups.length) return purifyM3u8(baseUrl, content)
+  const targetIndexes = new Set<number>()
+  for (const group of shortGroups) {
+    for (let index = Math.max(0, group.index - 1); index <= Math.min(groups.length - 1, group.index + 1); index++) {
+      targetIndexes.add(index)
+    }
+  }
+  const targets = [...targetIndexes]
+  const signatures = new Map<string, string>()
+  await Promise.all(targets.map(async (index) => {
+    const group = groups[index]
+    const signature = await probeSps(group.urls[0], headers, AbortSignal.timeout(2500))
+    if (signature) signatures.set(group.urls[0], signature)
+  }))
+  if (signatures.size < 3) return purifyM3u8(baseUrl, content)
+
+  // 为同组内的所有分片复用首片 SPS 签名，净化器按组判断而不是逐片误删。
+  const groupSignatureMap = new Map<string, string>()
+  for (const group of groups) {
+    const signature = signatures.get(group.urls[0])
+    if (!signature) continue
+    for (const url of group.urls) groupSignatureMap.set(url, signature)
+  }
+  return purifyM3u8(baseUrl, content, groupSignatureMap)
+}
+
 async function listen(): Promise<void> {
   if (localBase) return
   if (!listening) {
@@ -110,7 +233,7 @@ async function listen(): Promise<void> {
           const upstreamOk = (upstream.statusCode ?? 0) >= 200 && (upstream.statusCode ?? 0) < 300
           if (method !== 'HEAD' && upstreamOk && (contentType.includes('mpegurl') || /\.m3u8(?:$|[?#])/i.test(finalUrl))) {
             const body = await readResponseText(upstream)
-            const clean = purify ? purifyM3u8(finalUrl, body) : body
+            const clean = purify ? await purifyPlaybackPlaylist(finalUrl, body, sourceHeaders) : body
             const rewritten = clean.split(/\r?\n/).map((line) => {
               const trimmed = line.trim()
               if (!trimmed) return line
