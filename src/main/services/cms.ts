@@ -23,6 +23,10 @@ const PLACEHOLDERS: Array<[keyof CmsQuery, RegExp]> = [
 ]
 
 const API_PATH_ALTERNATES: Record<string, string[]> = {
+  'caiji.xgzyapi.com': [
+    '/api.php/provide/vod/from/xiguam3u8/',
+    '/api.php/provide/vod/'
+  ],
   'caiji.dbzy5.com': ['/api.php/provide/vod/', '/api.php/provide/vod/from/dbm3u8/at/json/'],
   'cj.lziapi.com': ['/api.php/provide/vod/', '/api.php/provide/vod/from/lzyun/'],
   'cj.ffzyapi.com': ['/api.php/provide/vod/', '/api.php/provide/vod/from/ffm3u8/'],
@@ -36,6 +40,7 @@ const API_PATH_ALTERNATES: Record<string, string[]> = {
 }
 
 const API_REFERERS: Record<string, string> = {
+  'caiji.xgzyapi.com': 'https://xgzy.tv/',
   'api.ffzyapi.com': 'https://ffzy5.tv/',
   'cj.ffzyapi.com': 'https://ffzy5.tv/',
   'cj.lziapi.com': 'https://lzizy.net/',
@@ -78,6 +83,16 @@ const API_REFERERS: Record<string, string> = {
 /** 保持 Android CMS 请求的候选顺序：主 API、站点备用路径、配置备用 API、备用域名。 */
 export function cmsApiCandidates(site: Site): Site[] {
   const urls: string[] = [site.api]
+  const isXigua = site.key.trim().toLowerCase() === 'xgzy' || /西瓜/u.test(site.name)
+  if (isXigua) {
+    // 旧版本曾把西瓜写成 127.0.0.1:9978/cms/xgzy。保留原地址作为
+    // 第一候选以兼容用户自定义网关，但必须追加可直连的官方采集接口，
+    // 避免旧配置因本地网关不存在而整站搜索为空。
+    urls.push(
+      'https://caiji.xgzyapi.com/api.php/provide/vod/from/xiguam3u8/',
+      'https://caiji.xgzyapi.com/api.php/provide/vod/'
+    )
+  }
   try {
     const primary = new URL(site.api)
     for (const path of API_PATH_ALTERNATES[primary.hostname.toLowerCase()] ?? []) {
