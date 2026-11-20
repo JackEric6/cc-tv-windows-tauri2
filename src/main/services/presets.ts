@@ -38,6 +38,7 @@ export interface SourcePreset {
 }
 
 const sourceConfig = congcongConfig as unknown as Record<string, any>
+const XIGUA_CANONICAL_API = 'https://caiji.xgzyapi.com/api.php/provide/vod/from/xiguam3u8/'
 const GUAZI_HOME_SECTIONS = [
   ['74151', '10月重磅新剧', '4'],
   ['46296', '最新热播电影', '3'],
@@ -252,6 +253,9 @@ async function migrateBundledSources(): Promise<boolean> {
       const searchable = isSearchableByDefault(key)
       return {
         ...site,
+        // 旧安装包把西瓜映射到本地 9978 网关；该网关已不再随应用提供。
+        // 迁移到直连 CMS 接口，避免升级后西瓜搜索全部返回空结果。
+        ...(key === 'xgzy' ? { api: XIGUA_CANONICAL_API, type: 'cms' } : {}),
         ...(String(site.name ?? '') === '素博资源' ? { name: '素博' } : {}),
         ...(knownAndroidSource ? { searchable: searchable ? 1 : 0 } : {}),
         ...(key === 'cz4k' || key === 'ryzy' ? { quickSearch: 0 } : {}),
